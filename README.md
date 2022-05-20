@@ -21,8 +21,8 @@ Code requirements:
 Submission:
 You would be added to a Github repo for front-end and backend attached below:
 
-Backend: https://github.com/punchagency/django-backend-test
-Frontend: https://github.com/punchagency/frontend-test
+Backend: https://github.com/punchagency/punch-django-backend-test
+Frontend: https://github.com/punchagency/punch-frontend-test
 
 * You would be added to the Github repos mentioned above.
 * You can create a branch by your name.
