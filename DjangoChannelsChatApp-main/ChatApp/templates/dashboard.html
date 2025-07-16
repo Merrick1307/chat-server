@@ -1,0 +1,439 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <title>Dashboard - WhatsApp Web Style</title>
+    <link href="https://fonts.googleapis.com/css2?family=Roboto:wght@400;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Roboto', Arial, sans-serif; background: #f0f2f5; min-height: 100vh; margin: 0; }
+        .split-container { display: flex; height: 100vh; box-sizing: border-box; }
+        .chat-list-panel { width: 340px; min-width: 260px; background: #fff; box-shadow: 2px 0 8px rgba(0,0,0,0.04); border-right: 1px solid #ececec; display: flex; flex-direction: column; }
+        .user-bar { padding: 24px 20px 12px 20px; border-bottom: 1.5px solid #f0f2f5; font-weight: 700; font-size: 1.2em; color: #191654; display: flex; align-items: center; justify-content: space-between; }
+        .chat-list-header { padding: 20px; font-size: 1.3em; font-weight: bold; border-bottom: 1px solid #ececec; background: #f7f7fa; }
+        .search-bar { padding: 12px 20px; border-bottom: 1.5px solid #f0f2f5; }
+        .search-bar input { width: 100%; padding: 8px 12px; border-radius: 8px; border: 1.5px solid #43c6ac; font-size: 1em; background: #f7f9fa; color: #191654; }
+        .chat-list { flex: 1; overflow-y: auto; padding: 0; margin: 0; list-style: none; }
+        .chat-list-item { display: flex; align-items: center; padding: 16px 20px; cursor: pointer; border-bottom: 1px solid #f0f2f5; transition: background 0.2s; }
+        .chat-list-item:hover, .chat-list-item.active { background: #e7f3ff; }
+        .profile-icon, .avatar { width: 40px; height: 40px; border-radius: 50%; background: #dbeafe; color: #2563eb; display: flex; align-items: center; justify-content: center; font-weight: bold; font-size: 1.1em; margin-right: 14px; box-shadow: 0 2px 8px rgba(0,0,0,0.07); }
+        .chat-main-panel { width: 70%; background: #f9fafb; display: flex; flex-direction: column; box-shadow: -2px 0 8px rgba(0,0,0,0.03); }
+        .chat-header { display: flex; align-items: center; padding: 18px 28px; background: #fff; border-bottom: 1px solid #ececec; box-shadow: 0 2px 8px rgba(0,0,0,0.03); }
+        .chat-header .profile-icon { margin-right: 16px; }
+        .chat-header .chat-title { font-size: 1.2em; font-weight: 600; }
+        .chat-history { flex: 1; overflow-y: auto; padding: 32px 28px 16px 28px; display: flex; flex-direction: column; gap: 12px; }
+        .chat-bubble { max-width: 60%; padding: 12px 18px; border-radius: 18px; box-shadow: 0 2px 8px rgba(0,0,0,0.06); font-size: 1em; word-break: break-word; position: relative; }
+        .chat-bubble.sent { align-self: flex-end; background: #dbeafe; color: #1e293b; border-bottom-right-radius: 4px; }
+        .chat-bubble.received { align-self: flex-start; background: #fff; color: #1e293b; border-bottom-left-radius: 4px; }
+        .bubble-row { display: flex; align-items: flex-end; justify-content: flex-start; }
+        .bubble-row.self { justify-content: flex-end; }
+        .chat-input-panel { padding: 18px 28px; background: #fff; border-top: 1px solid #ececec; display: flex; gap: 12px; }
+        .chat-input { flex: 1; padding: 12px 16px; border-radius: 18px; border: 1px solid #d1d5db; font-size: 1em; outline: none; }
+        .send-btn { background: #2563eb; color: #fff; border: none; border-radius: 18px; padding: 10px 24px; font-weight: 700; cursor: pointer; transition: background 0.2s; }
+        .send-btn:hover { background: #174ea6; }
+        /* Custom scrollbar */
+        .chat-list, .chat-history { scrollbar-width: thin; scrollbar-color: #bcdffb #f0f2f5; }
+        .chat-list::-webkit-scrollbar, .chat-history::-webkit-scrollbar { width: 8px; }
+        .chat-list::-webkit-scrollbar-thumb, .chat-history::-webkit-scrollbar-thumb { background: #bcdffb; border-radius: 8px; }
+        .chat-list::-webkit-scrollbar-track, .chat-history::-webkit-scrollbar-track { background: #f0f2f5; }
+        @media (max-width: 800px) { .split-container { flex-direction: column; } .chat-list-panel, .chat-main-panel { width: 100%; min-width: 0; height: 50vh; } }
+    </style>
+</head>
+<body>
+<div class="split-container">
+    <!-- Left: Chat List & User Info -->
+    <div class="chat-list-panel">
+        <div class="user-bar">
+            <span>{{ user.username }}</span>
+            <button id="start-chat-btn" style="margin-left:10px; background:#43c6ac; color:#fff; border:none; border-radius:8px; padding:6px 16px; font-weight:700; cursor:pointer;">New Chat</button>
+            <button id="start-group-btn" style="margin-left:10px; background:#2563eb; color:#fff; border:none; border-radius:8px; padding:6px 16px; font-weight:700; cursor:pointer;">New Group</button>
+        </div>
+        <div id="new-chat-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.25); align-items:center; justify-content:center; z-index:1000;">
+            <div style="background:#fff; border-radius:12px; padding:32px 24px; min-width:320px; box-shadow:0 8px 32px #19165422; display:flex; flex-direction:column; align-items:center;">
+                <h3 style="margin-bottom:18px; color:#191654;">Start New Chat</h3>
+                <input type="text" id="new-chat-username" placeholder="Enter username..." style="padding:8px 12px; border-radius:6px; border:1.5px solid #43c6ac; font-size:1em; margin-bottom:12px; width:100%;">
+                <div id="new-chat-error" style="color:#ff5858; font-size:0.98em; margin-bottom:8px;"></div>
+                <button id="new-chat-submit" style="background:#43c6ac; color:#fff; border:none; border-radius:8px; padding:8px 22px; font-weight:700; cursor:pointer;">Start Chat</button>
+                <button id="new-chat-cancel" style="background:#bbb; color:#fff; border:none; border-radius:8px; padding:6px 18px; font-weight:700; cursor:pointer; margin-top:8px;">Cancel</button>
+            </div>
+        </div>
+        <div id="new-group-modal" style="display:none; position:fixed; top:0; left:0; width:100vw; height:100vh; background:rgba(0,0,0,0.25); align-items:center; justify-content:center; z-index:1000;">
+            <div style="background:#fff; border-radius:12px; padding:32px 24px; min-width:340px; box-shadow:0 8px 32px #19165422; display:flex; flex-direction:column; align-items:center;">
+                <h3 style="margin-bottom:18px; color:#191654;">Create Group</h3>
+                <input type="text" id="new-group-name" placeholder="Group name..." style="padding:8px 12px; border-radius:6px; border:1.5px solid #2563eb; font-size:1em; margin-bottom:12px; width:100%;">
+                <select id="new-group-users" multiple style="padding:8px 12px; border-radius:6px; border:1.5px solid #2563eb; font-size:1em; margin-bottom:12px; width:100%; min-height:80px;">
+                    {% for u in users %}
+                        {% if u != user %}
+                            <option value="{{ u.id }}">{{ u.username }}</option>
+                        {% endif %}
+                    {% endfor %}
+                </select>
+                <div id="new-group-error" style="color:#ff5858; font-size:0.98em; margin-bottom:8px;"></div>
+                <button id="new-group-submit" style="background:#2563eb; color:#fff; border:none; border-radius:8px; padding:8px 22px; font-weight:700; cursor:pointer;">Create Group</button>
+                <button id="new-group-cancel" style="background:#bbb; color:#fff; border:none; border-radius:8px; padding:6px 18px; font-weight:700; cursor:pointer; margin-top:8px;">Cancel</button>
+            </div>
+        </div>
+        <div class="search-bar">
+            <input type="text" id="chat-search" placeholder="Search chats..." onkeyup="filterChats()">
+        </div>
+        <ul class="chat-list" id="chatList">
+            {# Private Chats #}
+            {% for info in private_rooms_info %}
+            <li class="chat-list-item" data-room-name="{{ info.room.room_name }}">
+                <div class="profile-icon">{{ info.room.room_name|slice:":2"|upper }}</div>
+                <div>
+                    <div class="chat-title">{% for u in info.room.participants.all %}{% if u != user %}{{ u.username }}{% endif %}{% endfor %}</div>
+                    <div class="chat-preview">{{ info.last_message|default:"No messages yet" }}</div>
+                </div>
+            </li>
+            {% endfor %}
+            {# Group Chats #}
+            {% for info in group_rooms_info %}
+            <li class="chat-list-item" data-room-name="{{ info.room.room_name }}">
+                <div class="profile-icon">{{ info.room.room_name|cut:" "|slice:":2"|upper }}</div>
+                <div>
+                    <div class="chat-title">{{ info.room.room_name }}</div>
+                    <div class="chat-preview">{{ info.last_message|default:"No messages yet" }}</div>
+                </div>
+            </li>
+            {% endfor %}
+        </ul>
+    </div>
+    <!-- Right: Active Chat -->
+    <div class="chat-main-panel">
+        <div class="chat-header">
+            <div class="profile-icon"></div>
+            <div class="chat-title"></div>
+        </div>
+        <div class="chat-history" id="chatHistory">
+            <div id="emptyChatMsg" style="color:#b0b0b0;text-align:center;margin-top:40px;">
+                Select a chat to start messaging
+            </div>
+        </div>
+        <form class="chat-input-panel" id="chatForm" autocomplete="off" style="display:none;">
+            <input type="text" class="chat-input" id="chatInput" placeholder="Type a message..." />
+            <button type="submit" class="send-btn">Send</button>
+        </form>
+    </div>
+</div>
+<script>
+// Helper: Get initials from name
+function getInitials(name) {
+    if (!name) return '';
+    const words = name.trim().split(' ');
+    if (words.length === 1) return words[0][0].toUpperCase();
+    return (words[0][0] + words[1][0]).toUpperCase();
+}
+
+let currentRoom = null;
+let chatSocket = null;
+
+const chatList = document.getElementById('chatList');
+const chatHistory = document.getElementById('chatHistory');
+const chatHeader = document.querySelector('.chat-header .chat-title');
+const chatHeaderIcon = document.querySelector('.chat-header .profile-icon');
+
+// Helper: Render a message bubble row (like old chat page)
+function renderMessageBubble(msg, currentUsername) {
+    const isSelf = msg.is_self || msg.sender === currentUsername;
+    const bubbleRow = document.createElement('div');
+    bubbleRow.className = 'bubble-row' + (isSelf ? ' self' : '');
+    const avatar = document.createElement('div');
+    avatar.className = 'profile-icon';
+    avatar.textContent = (msg.sender || '').charAt(0).toUpperCase();
+    const bubble = document.createElement('div');
+    bubble.className = 'chat-bubble' + (isSelf ? ' sent' : ' received');
+    bubble.innerHTML = msg.message ? msg.message.replace(/\n/g, '<br>') : '';
+    // Add sender name for received messages
+    if (!isSelf && msg.sender) {
+        const senderTag = document.createElement('strong');
+        senderTag.style.display = 'block';
+        senderTag.style.fontSize = '0.92em';
+        senderTag.style.color = '#2563eb';
+        senderTag.textContent = '-' + msg.sender;
+        bubble.appendChild(senderTag);
+    }
+    // Add timestamp and status
+    const meta = document.createElement('div');
+    meta.className = 'meta';
+    meta.innerHTML = `<span>${msg.timestamp ? msg.timestamp.slice(11, 16) : ''}</span>`;
+    if (isSelf && msg.status) {
+        let tick = '';
+        if (msg.status === 'read') tick = '<span class=\"tick tick-read\">✔✔</span>';
+        else if (msg.status === 'delivered') tick = '<span class=\"tick tick-delivered\">✔✔</span>';
+        else tick = '<span class=\"tick tick-sent\">✅</span>';
+        meta.innerHTML += `<span class=\"status\">${tick}</span>`;
+    }
+    bubble.appendChild(meta);
+    if (isSelf) {
+        bubbleRow.appendChild(bubble);
+        bubbleRow.appendChild(avatar);
+    } else {
+        bubbleRow.appendChild(avatar);
+        bubbleRow.appendChild(bubble);
+    }
+    return bubbleRow;
+}
+
+// Improved auto-select and remember last selected chat
+window.addEventListener('DOMContentLoaded', function() {
+    function trySelectChat(roomName) {
+        let chatToSelect = null;
+        if (roomName) {
+            chatToSelect = Array.from(document.querySelectorAll('.chat-list-item')).find(
+                item => item.getAttribute('data-room-name') === roomName
+            );
+        }
+        if (!chatToSelect) {
+            chatToSelect = document.querySelector('.chat-list-item');
+        }
+        var emptyMsg = document.getElementById('emptyChatMsg');
+        var chatForm = document.getElementById('chatForm');
+        if (chatToSelect) {
+            chatToSelect.click();
+            if (emptyMsg) emptyMsg.style.display = 'none';
+            if (chatForm) chatForm.style.display = '';
+            console.log('Chat auto-selected:', chatToSelect.getAttribute('data-room-name'));
+        } else {
+            if (emptyMsg) emptyMsg.style.display = '';
+            if (chatForm) chatForm.style.display = 'none';
+            console.log('No chats found to auto-select.');
+        }
+    }
+    // Try to select last selected chat from localStorage, else first chat
+    const lastRoom = localStorage.getItem('lastSelectedRoom');
+    trySelectChat(lastRoom);
+    setTimeout(() => trySelectChat(lastRoom), 200);
+});
+
+chatList.addEventListener('click', function(e) {
+    let item = e.target;
+    while (item && !item.classList.contains('chat-list-item')) {
+        item = item.parentElement;
+    }
+    if (!item) return;
+    // Remove active from all
+    document.querySelectorAll('.chat-list-item').forEach(el => el.classList.remove('active'));
+    item.classList.add('active');
+    // Get room name from data attribute or inner text
+    const roomName = item.getAttribute('data-room-name') || item.querySelector('.chat-title').innerText;
+    const chatTitle = item.querySelector('.chat-title').innerText;
+    // Remember last selected chat
+    localStorage.setItem('lastSelectedRoom', roomName);
+    // Update header
+    chatHeader.textContent = chatTitle;
+    chatHeaderIcon.textContent = getInitials(chatTitle);
+    // Fetch messages
+    fetch(`/chat/api/messages/${encodeURIComponent(roomName)}/`)
+        .then(res => res.json())
+        .then(data => {
+            chatHistory.innerHTML = '';
+            data.messages.forEach(msg => {
+                chatHistory.appendChild(renderMessageBubble(msg, window.currentUsername));
+            });
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        });
+    // WebSocket
+    currentRoom = roomName;
+    connectWebSocket(roomName);
+    document.getElementById('emptyChatMsg').style.display = 'none';
+    document.getElementById('chatForm').style.display = '';
+});
+
+// Send message via WebSocket
+const chatForm = document.getElementById('chatForm');
+const chatInput = document.getElementById('chatInput');
+chatForm.addEventListener('submit', function(e) {
+    e.preventDefault();
+    if (!chatInput.value.trim() || !chatSocket) return;
+    chatSocket.send(JSON.stringify({
+        'message': chatInput.value,
+        'room_name': currentRoom
+    }));
+    chatInput.value = '';
+});
+
+function connectWebSocket(roomName) {
+    if (chatSocket) {
+        chatSocket.close();
+    }
+    const wsScheme = window.location.protocol === 'https:' ? 'wss' : 'ws';
+    chatSocket = new WebSocket(
+        wsScheme + '://' + window.location.host + `/ws/notification/${roomName}/`
+    );
+    chatSocket.onmessage = function(e) {
+        const data = JSON.parse(e.data);
+        if (data.message) {
+            const msg = data.message;
+            chatHistory.appendChild(renderMessageBubble(msg, window.currentUsername));
+            chatHistory.scrollTop = chatHistory.scrollHeight;
+        }
+    };
+    chatSocket.onclose = function(e) {
+        // Optionally handle reconnect
+    };
+}
+
+// Set current username for WebSocket message alignment
+window.currentUsername = "{{ user.username|escapejs }}";
+
+// Filter chats
+function filterChats() {
+    var input = document.getElementById('chat-search');
+    var filter = input.value.toLowerCase();
+    var chats = document.getElementsByClassName('chat-list-item');
+    for (var i = 0; i < chats.length; i++) {
+        var name = chats[i].querySelector('.chat-title').innerText.toLowerCase();
+        chats[i].style.display = name.includes(filter) ? '' : 'none';
+    }
+}
+
+document.getElementById('new-chat-submit').onclick = function() {
+    var username = document.getElementById('new-chat-username').value.trim();
+    if (!username) {
+        document.getElementById('new-chat-error').textContent = 'Please enter a username.';
+        return;
+    }
+    fetch('/ajax_create_private_room/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: 'other_username=' + encodeURIComponent(username)
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.room_name) {
+            // Add new chat to the chat list if not present
+            var chatList = document.getElementById('chatList');
+            var exists = Array.from(chatList.getElementsByClassName('chat-list-item')).some(
+                item => item.querySelector('.chat-title').innerText.toLowerCase() === username.toLowerCase()
+            );
+            if (!exists) {
+                var li = document.createElement('li');
+                li.className = 'chat-list-item';
+                li.setAttribute('data-room-name', data.room_name);
+                li.innerHTML = `<div class=\"profile-icon\">${username.charAt(0).toUpperCase()}</div><div><div class=\"chat-title\">${username}</div><div class=\"chat-preview\">No messages yet</div></div>`;
+                chatList.insertBefore(li, chatList.firstChild);
+            }
+            document.getElementById('new-chat-modal').style.display = 'none';
+            // Auto-select the new chat
+            setTimeout(() => {
+                var newItem = Array.from(chatList.getElementsByClassName('chat-list-item')).find(
+                    item => item.querySelector('.chat-title').innerText.toLowerCase() === username.toLowerCase()
+                );
+                if (newItem) newItem.click();
+            }, 100);
+        } else if (data.error) {
+            document.getElementById('new-chat-error').textContent = data.error;
+        }
+    })
+    .catch(() => {
+        document.getElementById('new-chat-error').textContent = 'Error. Please try again.';
+    });
+};
+
+document.getElementById('new-group-submit').onclick = function() {
+    var groupName = document.getElementById('new-group-name').value.trim();
+    var userSelect = document.getElementById('new-group-users');
+    var userIds = Array.from(userSelect.selectedOptions).map(opt => opt.value);
+    if (!groupName) {
+        document.getElementById('new-group-error').textContent = 'Please enter a group name.';
+        return;
+    }
+    fetch('/ajax_create_group_room/', {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/x-www-form-urlencoded',
+            'X-CSRFToken': '{{ csrf_token }}'
+        },
+        body: 'group_name=' + encodeURIComponent(groupName) + '&' + userIds.map(id => 'user_ids[]=' + encodeURIComponent(id)).join('&')
+    })
+    .then(response => response.json())
+    .then(data => {
+        if (data.room_name) {
+            // Add new group to the chat list
+            var chatList = document.getElementById('chatList');
+            var li = document.createElement('li');
+            li.className = 'chat-list-item';
+            li.setAttribute('data-room-name', data.room_name);
+            li.innerHTML = `<div class=\"profile-icon\">${groupName.charAt(0).toUpperCase()}</div><div><div class=\"chat-title\">${groupName}</div><div class=\"chat-preview\">No messages yet</div></div>`;
+            chatList.insertBefore(li, chatList.firstChild);
+            document.getElementById('new-group-modal').style.display = 'none';
+            // Auto-select the new group
+            setTimeout(() => {
+                var newItem = Array.from(chatList.getElementsByClassName('chat-list-item')).find(
+                    item => item.querySelector('.chat-title').innerText.toLowerCase() === groupName.toLowerCase()
+                );
+                if (newItem) newItem.click();
+            }, 100);
+        } else if (data.error) {
+            document.getElementById('new-group-error').textContent = data.error;
+        }
+    })
+    .catch(() => {
+        document.getElementById('new-group-error').textContent = 'Error. Please try again.';
+    });
+};
+
+document.getElementById('start-chat-btn').onclick = function() {
+    document.getElementById('new-chat-modal').style.display = 'flex';
+    document.getElementById('new-chat-username').value = '';
+    document.getElementById('new-chat-error').textContent = '';
+    document.getElementById('new-chat-username').focus();
+};
+document.getElementById('new-chat-cancel').onclick = function() {
+    document.getElementById('new-chat-modal').style.display = 'none';
+};
+document.getElementById('start-group-btn').onclick = function() {
+    document.getElementById('new-group-modal').style.display = 'flex';
+    document.getElementById('new-group-name').value = '';
+    document.getElementById('new-group-error').textContent = '';
+    document.getElementById('new-group-users').selectedIndex = -1;
+    document.getElementById('new-group-name').focus();
+};
+document.getElementById('new-group-cancel').onclick = function() {
+    document.getElementById('new-group-modal').style.display = 'none';
+};
+
+// Add online-dot span to private chat list items with tooltip for last seen
+function updateOnlineDots() {
+    document.querySelectorAll('.chat-list-item').forEach(function(item) {
+        const chatTitle = item.querySelector('.chat-title').innerText;
+        if (item.querySelector('.profile-icon').textContent === '#') return;
+        if (chatTitle === window.currentUsername) return;
+        let dot = item.querySelector('.online-dot');
+        if (!dot) {
+            dot = document.createElement('span');
+            dot.className = 'online-dot';
+            dot.style.display = 'none';
+            dot.style.width = '10px';
+            dot.style.height = '10px';
+            dot.style.borderRadius = '50%';
+            dot.style.background = '#43c6ac';
+            dot.style.marginLeft = '8px';
+            item.querySelector('.chat-title').parentNode.appendChild(dot);
+        }
+        fetch(`/accounts/api/user-status/${chatTitle}/`)
+            .then(response => response.json())
+            .then(data => {
+                if (data.status && data.status.toLowerCase() === 'online') {
+                    dot.style.display = 'inline-block';
+                    dot.title = 'Online';
+                } else {
+                    dot.style.display = 'none';
+                    if (data.last_seen) {
+                        dot.title = 'Last seen: ' + data.last_seen;
+                    } else {
+                        dot.title = 'Offline';
+                    }
+                }
+            });
+    });
+}
+// Initial call and poll every 10 seconds
+updateOnlineDots();
+setInterval(updateOnlineDots, 10000);
+</script>
+</body>
+</html> 

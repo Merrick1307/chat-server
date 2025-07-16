@@ -1,0 +1,111 @@
+{% extends 'base.html' %}
+{% load static %}
+{% block content %}
+<div class="login-container">
+    <h2 class="auth-title">Login</h2>
+    <form method="POST">
+        {% csrf_token %}
+        <label for="username">Username:</label>
+        <input type="text" name="username" required><br>
+        <label for="password">Password:</label>
+        <input type="password" name="password" required><br>
+        <button type="submit">Login</button>
+    </form>
+    <p>Don't have an account? <a href="{% url 'register' %}">Register here</a></p>
+    {% if messages %}
+        <ul>
+        {% for message in messages %}
+            <li>{{ message }}</li>
+        {% endfor %}
+        </ul>
+    {% endif %}
+</div>
+<style>
+    body {
+        /* Fallback to lo-fi wallpaper if static image is missing */
+        background: url('https://wallpapers-clan.com/wp-content/uploads/2024/07/lo-fi-aesthetic-landscape-wallpaper-preview.jpg') no-repeat center center fixed;
+        background-size: cover;
+    }
+.auth-bg {
+  min-height: 100vh;
+  background: url('https://wallpapers-clan.com/wp-content/uploads/2024/07/lo-fi-aesthetic-landscape-wallpaper-preview.jpg') no-repeat center center fixed;
+  background-size: cover;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+.auth-card {
+  background: rgba(30, 30, 40, 0.85);
+  border-radius: 18px;
+  box-shadow: 0 8px 32px 0 rgba(31, 38, 135, 0.2);
+  padding: 2.5rem 2rem 2rem 2rem;
+  max-width: 350px;
+  width: 100%;
+  text-align: center;
+}
+.auth-title {
+  font-family: 'Poppins', sans-serif;
+  font-size: 2rem;
+  color: #ffb86c;
+  margin-bottom: 1.5rem;
+  letter-spacing: 1px;
+}
+.auth-form .input-group {
+  margin-bottom: 1.2rem;
+  text-align: left;
+}
+.auth-form label {
+  font-size: 1rem;
+  color: #ffb86c;
+  margin-bottom: 0.3rem;
+  display: block;
+  font-weight: 600;
+}
+.auth-form input {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #8be9fd;
+  border-radius: 6px;
+  font-size: 1rem;
+  background: #282a36;
+  color: #fff;
+  margin-top: 0.2rem;
+  transition: border 0.2s;
+}
+.auth-form input:focus {
+  border: 1.5px solid #ffb86c;
+  outline: none;
+}
+.auth-btn {
+  width: 100%;
+  padding: 0.7rem;
+  background: linear-gradient(90deg, #ffb86c 0%, #8be9fd 100%);
+  color: #282a36;
+  border: none;
+  border-radius: 6px;
+  font-size: 1.1rem;
+  font-weight: 600;
+  cursor: pointer;
+  margin-top: 0.5rem;
+  transition: background 0.2s;
+}
+.auth-btn:hover {
+  background: linear-gradient(90deg, #8be9fd 0%, #ffb86c 100%);
+}
+.auth-link {
+  margin-top: 1.2rem;
+  font-size: 0.98rem;
+}
+.auth-link a {
+  color: #ffb86c;
+  text-decoration: underline;
+  font-weight: 600;
+}
+.auth-messages {
+  margin-top: 1rem;
+  color: #ff5555;
+  list-style: none;
+  padding: 0;
+}
+</style>
+{% endblock %}
