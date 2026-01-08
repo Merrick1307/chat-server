@@ -107,7 +107,7 @@ sequenceDiagram
         
         U2->>WS: Ack: delivered
         WS->>MC: Mark as delivered
-        MC->>PG: UPDATE delivered=true
+        MC->>PG: UPDATE delivered_at=NOW()
         
     else User B is offline
         par Save and Queue
@@ -127,10 +127,8 @@ sequenceDiagram
         WS->>U2: Deliver all offline
         U2->>WS: Ack: received
         MC->>RD: DEL queue
-        MC->>PG: UPDATE delivered=true
+        MC->>PG: UPDATE delivered_at=NOW()
     end
-    
-    Note over U1,U2: Both can query<br/>message history<br/>from PostgreSQL
 ```
 
 ### 2.3 Authentication Flow
@@ -233,18 +231,6 @@ stateDiagram-v2
     
     Active --> Disconnected: Logout
     Idle --> Disconnected: Timeout
-    
-    note right of Connected
-        - Map user_id to websocket
-        - Fetch offline messages
-        - Start heartbeat
-    end note
-    
-    note right of Active
-        - Route messages
-        - Update last_seen
-        - Send/receive in real-time
-    end note
 ```
 
 ---
@@ -273,6 +259,7 @@ erDiagram
         uuid user_id PK
         varchar username UK
         varchar email UK
+        varchar display_name
         varchar password_hash
         timestamp created_at
         timestamp last_seen
@@ -305,7 +292,7 @@ erDiagram
         text content
         varchar message_type
         timestamp created_at
-        boolean delivered
+        timestamp delivered_at
         timestamp read_at
     }
     
@@ -319,6 +306,7 @@ erDiagram
     group_members {
         uuid group_id FK
         uuid user_id FK
+        varchar role
         timestamp joined_at
     }
     
@@ -345,6 +333,7 @@ CREATE TABLE users (
     user_id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
     username VARCHAR(50) UNIQUE NOT NULL,
     email VARCHAR(255) UNIQUE NOT NULL,
+    display_name VARCHAR(100),
     password_hash VARCHAR(255) NOT NULL,
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     last_seen TIMESTAMP,
@@ -382,7 +371,7 @@ CREATE TABLE messages (
     content TEXT NOT NULL,
     message_type VARCHAR(20) DEFAULT 'text',
     created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-    delivered BOOLEAN DEFAULT false,
+    delivered_at TIMESTAMP,
     read_at TIMESTAMP
 );
 CREATE INDEX idx_messages_recipient ON messages(recipient_id, created_at DESC);
@@ -403,6 +392,7 @@ CREATE TABLE groups (
 CREATE TABLE group_members (
     group_id UUID REFERENCES groups(group_id) ON DELETE CASCADE,
     user_id UUID REFERENCES users(user_id) ON DELETE CASCADE,
+    role VARCHAR(20) DEFAULT 'member',
     joined_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
     PRIMARY KEY (group_id, user_id)
 );
@@ -734,7 +724,7 @@ class WebSocketManager:
 6. User B receives message, displays in UI instantly
 7. **Server saves message to PostgreSQL asynchronously** (don't block on this)
 8. User B sends read receipt
-9. Server updates `delivered` and `read_at` in PostgreSQL
+9. Server updates `delivered_at` and `read_at` in PostgreSQL
 
 **Key Point:** Message delivered to recipient BEFORE database write completes - this is critical for real-time performance.
 
@@ -751,7 +741,7 @@ class WebSocketManager:
 9. Server sends batch of offline messages to User B
 10. User B acknowledges receipt
 11. Server deletes Redis queue: `DEL offline_queue:B`
-12. Server updates messages as delivered in PostgreSQL
+12. Server sets `delivered_at` timestamp in PostgreSQL
 13. User B can now query full history from PostgreSQL
 
 **Key Point:** For offline users, we save to DB first (need durability), then queue reference in Redis.
