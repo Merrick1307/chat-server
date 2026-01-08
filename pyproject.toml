@@ -1,0 +1,14 @@
+[tool.poetry]
+name = "punch-chat-server-app"
+version = "0.1.0"
+description = ""
+authors = ["Merrick1307 <holuworley.yz@gmail.com>"]
+readme = "README.md"
+
+[tool.poetry.dependencies]
+python = "^3.14"
+
+
+[build-system]
+requires = ["poetry-core"]
+build-backend = "poetry.core.masonry.api"
