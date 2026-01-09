@@ -17,3 +17,5 @@ REDIS_PORT: int = int(os.getenv("REDIS_PORT", "6379"))
 REDIS_DB: int = int(os.getenv("REDIS_DB", "0"))
 REDIS_USER: str = os.getenv("REDIS_USER", "root")
 REDIS_PASSWORD: str = os.getenv("REDIS_PASSWORD", "")
+
+JWT_SECRET: str = os.getenv("JWT_SECRET")

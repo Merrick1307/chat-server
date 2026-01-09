@@ -1,25 +1,37 @@
-import uuid
-from dataclasses import dataclass
+from typing import Optional
+from uuid import UUID
 
-from pydantic import BaseModel
+from pydantic import EmailStr, Field
+
+from app.models.base import BaseModelSchema, BaseCreateSchema, BaseResponseSchema
 
 
-class User(BaseModel):
-    id: uuid.UUID
+class UserCreate(BaseCreateSchema):
+    """Schema for user creation request."""
+    username: str = Field(..., min_length=3, max_length=50)
+    email: EmailStr
+    password: str = Field(..., min_length=8)
+    first_name: str = Field(..., min_length=1, max_length=255)
+    last_name: str = Field(..., min_length=1, max_length=255)
+
+
+class UserResponse(BaseResponseSchema):
+    """Schema for user response."""
+    id: UUID
+    username: str
+    email: str
+    first_name: str
+    last_name: str
+    role: str
+    is_active: bool = True
+
+
+class User(BaseModelSchema):
+    """Full user model."""
+    id: Optional[UUID] = None
     username: str
     email: str
     password: str
     first_name: str
     last_name: str
-
-
-@dataclass(slots=True)
-class UserProfile:
-    id: uuid.UUID
-    username: str
-    email: str
-    first_name: str
-    last_name: str
-    is_active: bool
-    created_at: str
-    updated_at: str
+    role: str = "user"

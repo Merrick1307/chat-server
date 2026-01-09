@@ -600,35 +600,42 @@ wss://api.example.com/ws?token={jwt_access_token}
 
 ---
 
-## 5. Backend Architecture (MVC)
+## 5. Backend Architecture (FastAPI MVC + Services)
 
 ### 5.1 Project Structure
 
 ```
-backend/
+app/
 ├── main.py                          # FastAPI app entry point
-├── config.py                        # Configuration (env vars, secrets)
 │
-├── models/                          # Data models (Pydantic)
+├── models/                          # Data models (Pydantic request schemas)
 │   ├── __init__.py
+│   ├── base.py                      # BaseModelSchema, BaseCreateSchema
 │   ├── user.py                      # User, UserCreate, UserResponse
 │   ├── message.py                   # Message, MessageCreate
-│   ├── group.py                     # Group, GroupCreate, GroupMember
-│   └── auth.py                      # LoginRequest, TokenResponse
+│   └── group.py                     # Group, GroupCreate, GroupMember
 │
-├── controllers/                     # Business logic
+├── controllers/                     # API endpoints + route handlers
 │   ├── __init__.py
-│   ├── auth_controller.py           # Signup, login, password reset, sessions
-│   ├── message_controller.py        # Send, receive, history
-│   ├── group_controller.py          # Create, manage groups
-│   └── user_controller.py           # User operations
+│   ├── base.py                      # BaseController (ABC)
+│   ├── auth.py                      # /auth/* endpoints + AuthController
+│   ├── message.py                   # /messages/* endpoints
+│   ├── group.py                     # /groups/* endpoints
+│   └── user.py                      # /users/* endpoints
 │
-├── views/                           # API endpoints (REST)
+├── services/                        # Business logic layer
 │   ├── __init__.py
-│   ├── auth_view.py                 # /auth/* endpoints
-│   ├── message_view.py              # /messages/* endpoints
-│   ├── group_view.py                # /groups/* endpoints
-│   └── user_view.py                 # /users/* endpoints
+│   ├── base.py                      # BaseService (ABC)
+│   ├── auth.py                      # AuthService (signup, login, etc.)
+│   ├── message.py                   # MessageService
+│   └── group.py                     # GroupService
+│
+├── views/                           # Response schemas / DTOs
+│   ├── __init__.py
+│   ├── base.py                      # BaseView, ApiResponse, PaginatedResponse
+│   ├── auth.py                      # TokenResponse, SessionResponse, etc.
+│   ├── user.py                      # UserProfile
+│   └── message.py                   # MessageResponse
 │
 ├── websocket/                       # WebSocket handling
 │   ├── __init__.py
@@ -636,20 +643,25 @@ backend/
 │   └── handler.py                   # WebSocketHandler class
 │
 ├── database/
-│   ├── __init__.py
-│   ├── postgres.py                  # DatabaseManager (asyncpg)
-│   ├── redis_client.py              # RedisClient wrapper
+│   ├── __init__.py                  # Lifespan manager (db pool, redis)
 │   └── migrations/
-│       ├── 001_create_users.sql
-│       ├── 002_create_messages.sql
-│       └── 003_create_groups.sql
+│       ├── 001_create_users.py
+│       ├── 002_create_refresh_tokens.py
+│       └── 003_create_messages.py
+│
+├── dependencies/
+│   ├── __init__.py
+│   └── database.py                  # acquire_db_connection dependency
 │
 ├── utils/
 │   ├── __init__.py
-│   ├── jwt.py                       # JWT encode/decode
-│   ├── password.py                  # Bcrypt helpers
-│   ├── validation.py                # Input validators
-│   └── serialization.py             # orjson helpers
+│   ├── config.py                    # Configuration (env vars, secrets)
+│   ├── jwts.py                      # JWT encode/decode/verify
+│   └── logs/                        # Logging utilities
+│       ├── __init__.py
+│       ├── errors.py                # ErrorLogger
+│       ├── dependencies.py          # Logger dependencies
+│       └── middleware.py            # LoggingMiddleware
 │
 └── tests/
     ├── test_auth.py
@@ -659,48 +671,78 @@ backend/
 
 ### 5.2 Core Classes
 
-**Controllers (Business Logic):**
+**Base Classes:**
 
 ```python
-class DatabaseManager:
-    """PostgreSQL connection pool manager"""
-    async def execute(query: str, *args) -> str
-    async def fetch_one(query: str, *args) -> dict | None
-    async def fetch_all(query: str, *args) -> list[dict]
-    async def transaction() -> AsyncContextManager
+class BaseService(ABC):
+    """Abstract base for all services (business logic)"""
+    def __init__(self, db: Connection, logger: ErrorLogger = None)
+    @property db -> Connection
+    @property logger -> ErrorLogger
+    async def log_error(message: str, **kwargs)
+    async def log_info(message: str, **kwargs)
 
-class RedisClient:
-    """Redis client wrapper"""
-    async def lpush(key: str, value: str) -> int
-    async def lrange(key: str, start: int, end: int) -> list[str]
-    async def delete(key: str) -> bool
-    async def setex(key: str, ttl: int, value: str) -> bool
+class BaseController(ABC):
+    """Abstract base for all controllers (API endpoints)"""
+    def __init__(self, db: Connection, logger: ErrorLogger = None)
+    @property db -> Connection
+    @property logger -> ErrorLogger
+    async def log_error(message: str, **kwargs)
+    async def log_info(message: str, **kwargs)
+```
 
-class AuthController:
+**Services (Business Logic):**
+
+```python
+class AuthService(BaseService):
     """Authentication business logic"""
-    async def signup(username: str, email: str, password: str) -> TokenResponse
-    async def login(username: str, password: str) -> TokenResponse
+    async def signup(username: str, email: str, password: str, ...) -> dict
+    async def login(username: str, password: str) -> dict
     async def logout(refresh_token: str) -> bool
-    async def forgot_password(email: str) -> bool
-    async def reset_password(token: str, new_password: str) -> bool
-    async def check_session(access_token: str) -> dict
-    async def refresh_session(refresh_token: str) -> TokenResponse
+    async def refresh(refresh_token: str) -> dict
+    async def check_session(user_id: UUID) -> dict
+    # Password hashing, token generation handled internally
 
-class MessageController:
-    """Message handling"""
+class MessageService(BaseService):
+    """Message handling business logic"""
     async def send_message(sender_id: str, recipient_id: str, content: str) -> Message
     async def get_conversation(user1_id: str, user2_id: str, limit: int) -> list[Message]
     async def queue_offline_message(user_id: str, message_id: str)
     async def get_offline_messages(user_id: str) -> list[Message]
 
-class GroupController:
-    """Group management"""
+class GroupService(BaseService):
+    """Group management business logic"""
     async def create_group(creator_id: str, name: str, member_ids: list[str]) -> Group
     async def add_members(group_id: str, user_ids: list[str]) -> bool
     async def remove_member(group_id: str, user_id: str) -> bool
     async def send_group_message(group_id: str, sender_id: str, content: str) -> Message
-    async def get_group_messages(group_id: str, limit: int) -> list[Message]
+```
 
+**Controllers (API Endpoints + Route Handlers):**
+
+```python
+class AuthController(BaseController):
+    """Auth endpoint handlers - delegates to AuthService"""
+    def __init__(self, db, logger):
+        self._auth_service = AuthService(db, logger)
+    async def signup(...) -> dict  # Handles HTTP errors
+    async def login(...) -> dict
+    async def logout(...) -> dict
+    async def refresh(...) -> dict
+    async def check_session(...) -> dict
+
+# FastAPI router with endpoints
+router = APIRouter(prefix="/api/v1/auth")
+
+@router.post("/signup")
+async def signup(request: SignupRequest, db: Connection, logger: ErrorLogger):
+    controller = AuthController(db, logger)
+    return await controller.signup(...)
+```
+
+**WebSocket Manager:**
+
+```python
 class WebSocketManager:
     """Manages WebSocket connections"""
     async def connect(user_id: str, websocket: WebSocket)
