@@ -612,45 +612,54 @@ app/
 │   ├── __init__.py
 │   ├── base.py                      # BaseModelSchema, BaseCreateSchema
 │   ├── user.py                      # User, UserCreate, UserResponse
-│   ├── message.py                   # Message, MessageCreate
-│   └── group.py                     # Group, GroupCreate, GroupMember
+│   └── messaging.py                 # Message, Group, GroupMember models
 │
 ├── controllers/                     # API endpoints + route handlers
 │   ├── __init__.py
 │   ├── base.py                      # BaseController (ABC)
 │   ├── auth.py                      # /auth/* endpoints + AuthController
-│   ├── message.py                   # /messages/* endpoints
-│   ├── group.py                     # /groups/* endpoints
-│   └── user.py                      # /users/* endpoints
+│   ├── messaging.py                 # /messages/* and /groups/* endpoints
+│   └── websocket.py                 # WebSocket endpoint (/ws)
 │
 ├── services/                        # Business logic layer
 │   ├── __init__.py
 │   ├── base.py                      # BaseService (ABC)
 │   ├── auth.py                      # AuthService (signup, login, etc.)
-│   ├── message.py                   # MessageService
-│   └── group.py                     # GroupService
+│   └── messaging.py                 # MessageService, GroupService, GroupMessageService
 │
 ├── views/                           # Response schemas / DTOs
 │   ├── __init__.py
 │   ├── base.py                      # BaseView, ApiResponse, PaginatedResponse
 │   ├── auth.py                      # TokenResponse, SessionResponse, etc.
 │   ├── user.py                      # UserProfile
-│   └── message.py                   # MessageResponse
+│   └── messaging.py                 # ClientMessage, ServerMessage schemas
 │
 ├── websocket/                       # WebSocket handling
 │   ├── __init__.py
 │   ├── manager.py                   # WebSocketManager class
 │   └── handler.py                   # WebSocketHandler class
 │
+├── cache/                           # Redis cache utilities
+│   ├── __init__.py
+│   ├── client.py                    # RedisClient wrapper
+│   ├── keys.py                      # RedisKeys (key patterns & TTLs)
+│   └── websockets.py                # WebSocketCacheService
+│
 ├── database/
-│   ├── __init__.py                  # Lifespan manager (db pool, redis)
+│   ├── __init__.py                  # Lifespan manager (db pool, redis, ws_manager)
+│   ├── run_migrations.py            # Migration runner script
 │   └── migrations/
-│       ├── 001_create_users.py
-│       ├── 002_create_refresh_tokens.py
-│       └── 003_create_messages.py
+│       ├── 001_create_users_table.py
+│       ├── 002_create_refresh_tokens_table.py
+│       ├── 003_create_messages_table.py
+│       ├── 004_create_groups_table.py
+│       ├── 005_create_group_members_table.py
+│       ├── 006_create_group_messages_table.py
+│       └── 007_create_group_message_reads_table.py
 │
 ├── dependencies/
 │   ├── __init__.py
+│   ├── cache.py                     # get_redis_client dependency
 │   └── database.py                  # acquire_db_connection dependency
 │
 ├── utils/
