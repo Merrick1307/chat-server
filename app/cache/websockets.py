@@ -1,5 +1,5 @@
-﻿from typing import Optional
-import json
+from typing import Optional
+import orjson
 
 from redis.asyncio import Redis
 
@@ -53,14 +53,14 @@ class WebSocketCacheService:
         if group_id:
             payload["group_id"] = group_id
         
-        await self._redis.lpush(key, json.dumps(payload))
+        await self._redis.lpush(key, orjson.dumps(payload).decode())
         await self._redis.expire(key, RedisKeys.OFFLINE_QUEUE_TTL)
     
     async def get_offline_queue(self, user_id: str) -> list[dict]:
         """Get all queued offline messages for user."""
         key = RedisKeys.offline_queue(user_id)
         messages = await self._redis.lrange(key, 0, -1)
-        return [json.loads(msg) for msg in messages] if messages else []
+        return [orjson.loads(msg) for msg in messages] if messages else []
     
     async def clear_offline_queue(self, user_id: str) -> None:
         """Clear offline queue after delivery."""

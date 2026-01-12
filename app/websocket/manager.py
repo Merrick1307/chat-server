@@ -1,7 +1,7 @@
-﻿from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager
 from typing import Set, Dict, Optional, Any
 import asyncio
-import json
+import orjson
 
 from fastapi.websockets import WebSocket, WebSocketDisconnect
 from redis.asyncio import Redis
@@ -15,11 +15,8 @@ class WebSocketManager:
     MAX_CONNECTIONS_PER_USER = 5
     
     def __init__(self, redis_client: Redis, cache: WebSocketCacheService):
-        # Local state for the server instance
         self.active_connections: Dict[str, Set[WebSocket]] = {}
         self._ws_to_user: Dict[WebSocket, str] = {}
-        
-        # Redis cache service
         self.redis = redis_client
         self.cache = cache
     
@@ -30,13 +27,11 @@ class WebSocketManager:
         try:
             await websocket.accept()
             
-            # Check connection limit
             if user_id in self.active_connections:
                 if len(self.active_connections[user_id]) >= self.MAX_CONNECTIONS_PER_USER:
                     await websocket.close(code=4000, reason="Too many connections")
                     raise ConnectionRefusedError("Too many connections")
             
-            # Register connection
             if user_id not in self.active_connections:
                 self.active_connections[user_id] = set()
             
@@ -44,7 +39,6 @@ class WebSocketManager:
             self._ws_to_user[websocket] = user_id
             connected = True
             
-            # Mark user as online in Redis
             await self._set_user_online(user_id)
             
             yield websocket
@@ -57,13 +51,10 @@ class WebSocketManager:
         """Handle WebSocket disconnection."""
         if user_id in self.active_connections:
             self.active_connections[user_id].discard(websocket)
-            
-            # If no more connections for this user, mark offline
             if not self.active_connections[user_id]:
                 del self.active_connections[user_id]
                 await self._set_user_offline(user_id)
         
-        # Remove from websocket-to-user mapping
         self._ws_to_user.pop(websocket, None)
     
     async def _set_user_online(self, user_id: str) -> None:
@@ -91,7 +82,7 @@ class WebSocketManager:
         if not connections:
             return False
         
-        message_json = json.dumps(message)
+        message_json = orjson.dumps(message).decode()
         disconnected = []
         
         for ws in connections:
@@ -100,7 +91,6 @@ class WebSocketManager:
             except Exception:
                 disconnected.append(ws)
         
-        # Clean up disconnected sockets
         for ws in disconnected:
             await self._disconnect(user_id, ws)
         

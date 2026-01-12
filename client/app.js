@@ -12,45 +12,25 @@ const App = {
     },
 
     bindEvents() {
-        // Auth tabs
         document.querySelectorAll('.tab-btn').forEach(btn => {
             btn.addEventListener('click', (e) => this.switchAuthTab(e.target.dataset.tab));
         });
-
-        // Auth forms
         document.getElementById('login-form').addEventListener('submit', (e) => this.handleLogin(e));
         document.getElementById('signup-form').addEventListener('submit', (e) => this.handleSignup(e));
-
-        // Logout
         document.getElementById('logout-btn').addEventListener('click', () => this.handleLogout());
-
-        // Sidebar tabs
         document.querySelectorAll('.sidebar-tab').forEach(btn => {
             btn.addEventListener('click', (e) => this.switchSidebarView(e.target.dataset.view));
         });
-
-        // New chat/group buttons
         document.getElementById('new-chat-btn').addEventListener('click', () => this.showModal('new-chat-modal'));
         document.getElementById('new-group-btn').addEventListener('click', () => this.showModal('new-group-modal'));
-
-        // Modal actions
         document.getElementById('start-chat-btn').addEventListener('click', () => this.startNewChat());
         document.getElementById('create-group-btn').addEventListener('click', () => this.createNewGroup());
-
-        // Cancel buttons
         document.querySelectorAll('.cancel-btn').forEach(btn => {
-            btn.addEventListener('click', (e) => {
-                e.target.closest('.modal').classList.add('hidden');
-            });
+            btn.addEventListener('click', (e) => e.target.closest('.modal').classList.add('hidden'));
         });
-
-        // Message form
         document.getElementById('message-form').addEventListener('submit', (e) => this.handleSendMessage(e));
-
-        // Typing indicator
         document.getElementById('message-input').addEventListener('input', () => this.handleTyping());
 
-        // WebSocket events
         ws.on('connected', () => this.onWsConnected());
         ws.on('disconnected', () => this.onWsDisconnected());
         ws.on('message', (msg) => this.onNewMessage(msg));
@@ -87,18 +67,19 @@ const App = {
 
     async handleLogin(e) {
         e.preventDefault();
-        const email = document.getElementById('login-email').value;
+        const username = document.getElementById('login-username').value;
         const password = document.getElementById('login-password').value;
         const errorEl = document.getElementById('login-error');
 
         try {
             errorEl.textContent = '';
-            const data = await API.login(email, password);
+            const data = await API.login(username, password);
             API.setToken(data.access_token);
-            
+            API.setRefreshToken(data.refresh_token);
+
             this.currentUser = {
-                email: email,
-                username: data.username || email.split('@')[0]
+                user_id: data.user_id,
+                username: username
             };
             localStorage.setItem('user_data', JSON.stringify(this.currentUser));
 
@@ -115,22 +96,27 @@ const App = {
         e.preventDefault();
         const username = document.getElementById('signup-username').value;
         const email = document.getElementById('signup-email').value;
+        const firstName = document.getElementById('signup-firstname').value;
+        const lastName = document.getElementById('signup-lastname').value;
         const password = document.getElementById('signup-password').value;
         const errorEl = document.getElementById('signup-error');
 
         try {
             errorEl.textContent = '';
-            await API.signup(username, email, password);
-            
-            // Auto login after signup
-            const data = await API.login(email, password);
+            const data = await API.signup(username, email, password, firstName, lastName);
             API.setToken(data.access_token);
-            
-            this.currentUser = { email, username };
+            API.setRefreshToken(data.refresh_token);
+
+            this.currentUser = {
+                user_id: data.user_id,
+                username: username
+            };
             localStorage.setItem('user_data', JSON.stringify(this.currentUser));
 
             this.showChatScreen();
             ws.connect();
+            this.loadConversations();
+            this.loadGroups();
         } catch (error) {
             errorEl.textContent = error.message;
         }
@@ -167,18 +153,18 @@ const App = {
 
     async loadConversations() {
         try {
-            const unread = await API.getUnreadMessages();
-            if (unread && Array.isArray(unread)) {
-                unread.forEach(msg => {
-                    const otherUserId = msg.sender_id;
-                    if (!this.conversations.has(otherUserId)) {
-                        this.conversations.set(otherUserId, {
-                            userId: otherUserId,
-                            messages: [],
-                            unread: 0
-                        });
-                    }
-                    this.conversations.get(otherUserId).unread++;
+            const conversations = await API.getConversationsList();
+            if (conversations && Array.isArray(conversations)) {
+                conversations.forEach(conv => {
+                    this.conversations.set(conv.partner_id, {
+                        recipientId: conv.partner_id,
+                        username: conv.username,
+                        displayName: conv.display_name || conv.username,
+                        lastMessage: conv.last_message,
+                        lastMessageAt: conv.last_message_at,
+                        unread: conv.unread_count || 0,
+                        messages: []
+                    });
                 });
             }
             this.renderConversations();
@@ -210,20 +196,21 @@ const App = {
             return;
         }
 
-        this.conversations.forEach((conv, otherUserId) => {
+        this.conversations.forEach((conv, oderId) => {
             const div = document.createElement('div');
             div.className = 'conversation-item';
-            div.dataset.userId = otherUserId;
-            if (this.currentChat === otherUserId && this.currentChatType === 'direct') {
+            div.dataset.oderId = oderId;
+            if (this.currentChat === oderId && this.currentChatType === 'direct') {
                 div.classList.add('active');
             }
             
+            const displayName = conv.displayName || conv.username || oderId;
             const unreadBadge = conv.unread > 0 ? `<span class="unread-badge">${conv.unread}</span>` : '';
             div.innerHTML = `
-                <div class="name">${otherUserId}${unreadBadge}</div>
+                <div class="name">${this.escapeHtml(displayName)}${unreadBadge}</div>
                 <div class="preview">${conv.lastMessage || 'Start a conversation'}</div>
             `;
-            div.addEventListener('click', () => this.openChat(otherUserId));
+            div.addEventListener('click', () => this.openChat(oderId));
             container.appendChild(div);
         });
     },
@@ -254,27 +241,36 @@ const App = {
         });
     },
 
-    async openChat(userId) {
-        this.currentChat = userId;
+    async openChat(recipientId) {
+        this.currentChat = recipientId;
         this.currentChatType = 'direct';
 
         document.getElementById('chat-placeholder').classList.add('hidden');
         document.getElementById('chat-content').classList.remove('hidden');
-        document.getElementById('chat-title').textContent = userId;
         document.getElementById('typing-indicator').classList.add('hidden');
+
+        const conv = this.conversations.get(recipientId);
+        const chatTitle = conv ? (conv.displayName || conv.username || recipientId) : recipientId;
+        document.getElementById('chat-title').textContent = chatTitle;
 
         this.renderConversations();
 
-        // Clear unread
-        if (this.conversations.has(userId)) {
-            this.conversations.get(userId).unread = 0;
+        if (conv) {
+            conv.unread = 0;
             this.renderConversations();
         }
 
-        // Load messages
         try {
-            const data = await API.getConversation(userId);
-            this.renderMessages(data.messages || []);
+            const data = await API.getConversation(recipientId);
+            const messages = data.messages || [];
+            this.renderMessages(messages);
+            
+            // Mark unread messages as read
+            for (const msg of messages) {
+                if (msg.sender_id !== this.currentUser.user_id && !msg.read_at) {
+                    API.markAsRead(msg.message_id).catch(() => {});
+                }
+            }
         } catch (error) {
             console.error('Failed to load conversation:', error);
             this.renderMessages([]);
@@ -294,7 +290,6 @@ const App = {
 
         this.renderGroups();
 
-        // Load messages
         try {
             const data = await API.getGroupMessages(groupId);
             this.renderMessages(data.messages || [], true);
@@ -309,15 +304,14 @@ const App = {
         container.innerHTML = '';
 
         messages.forEach(msg => {
-            const isSent = msg.sender_id === this.currentUser.username || 
-                           msg.sender_id === this.currentUser.email;
+            const isSent = msg.sender_id === this.currentUser.user_id;
             
             const div = document.createElement('div');
             div.className = `message ${isSent ? 'sent' : 'received'}`;
             
             let senderHtml = '';
             if (isGroup && !isSent) {
-                senderHtml = `<div class="sender">${msg.sender_id}</div>`;
+                senderHtml = `<div class="sender">${msg.sender_username || msg.sender_id}</div>`;
             }
             
             const time = new Date(msg.created_at).toLocaleTimeString([], { 
@@ -349,9 +343,8 @@ const App = {
             ws.sendGroupMessage(this.currentChat, content);
         }
 
-        // Optimistic UI update
         this.addMessageToUI({
-            sender_id: this.currentUser.username,
+            sender_id: this.currentUser.user_id,
             content,
             created_at: new Date().toISOString()
         });
@@ -361,8 +354,7 @@ const App = {
 
     addMessageToUI(msg) {
         const container = document.getElementById('messages-container');
-        const isSent = msg.sender_id === this.currentUser.username || 
-                       msg.sender_id === this.currentUser.email;
+        const isSent = msg.sender_id === this.currentUser.user_id;
         
         const div = document.createElement('div');
         div.className = `message ${isSent ? 'sent' : 'received'}`;
@@ -397,32 +389,45 @@ const App = {
             ws.sendTyping(null, this.currentChat);
         }
 
-        this.typingTimeout = setTimeout(() => {
-            // Typing stopped
-        }, 2000);
+        this.typingTimeout = setTimeout(() => {}, 2000);
     },
 
     showModal(modalId) {
         document.getElementById(modalId).classList.remove('hidden');
     },
 
-    startNewChat() {
-        const userId = document.getElementById('new-chat-user-id').value.trim();
-        if (!userId) return;
-
-        if (!this.conversations.has(userId)) {
-            this.conversations.set(userId, {
-                userId,
-                messages: [],
-                unread: 0
-            });
-        }
-
-        document.getElementById('new-chat-modal').classList.add('hidden');
-        document.getElementById('new-chat-user-id').value = '';
+    async startNewChat() {
+        const usernameInput = document.getElementById('new-chat-user-id');
+        const username = usernameInput.value.trim();
+        const errorEl = document.getElementById('new-chat-error');
         
-        this.renderConversations();
-        this.openChat(userId);
+        if (!username) return;
+
+        try {
+            errorEl.textContent = '';
+            errorEl.classList.add('hidden');
+            
+            const user = await API.lookupUser(username);
+            
+            if (!this.conversations.has(user.user_id)) {
+                this.conversations.set(user.user_id, {
+                    recipientId: user.user_id,
+                    username: user.username,
+                    displayName: user.display_name,
+                    messages: [],
+                    unread: 0
+                });
+            }
+
+            document.getElementById('new-chat-modal').classList.add('hidden');
+            usernameInput.value = '';
+            
+            this.renderConversations();
+            this.openChat(user.user_id);
+        } catch (error) {
+            errorEl.textContent = error.message || 'User not found';
+            errorEl.classList.remove('hidden');
+        }
     },
 
     async createNewGroup() {
@@ -431,9 +436,16 @@ const App = {
 
         if (!name || !membersInput) return;
 
-        const memberIds = membersInput.split(',').map(id => id.trim()).filter(id => id);
+        const usernames = membersInput.split(',').map(u => u.trim()).filter(u => u);
 
         try {
+            // Look up UUIDs for each username
+            const memberIds = [];
+            for (const username of usernames) {
+                const user = await API.lookupUser(username);
+                memberIds.push(user.user_id);
+            }
+
             const group = await API.createGroup(name, memberIds);
             this.groups.set(group.group_id, group);
             
@@ -450,7 +462,6 @@ const App = {
         }
     },
 
-    // WebSocket event handlers
     onWsConnected() {
         document.getElementById('chat-status').textContent = 'Online';
         document.getElementById('chat-status').classList.add('online');
@@ -464,10 +475,11 @@ const App = {
     onNewMessage(msg) {
         const senderId = msg.sender_id;
 
-        // Add to conversations if not exists
         if (!this.conversations.has(senderId)) {
             this.conversations.set(senderId, {
-                userId: senderId,
+                recipientId: senderId,
+                username: msg.sender_username || senderId,
+                displayName: msg.sender_username || senderId,
                 messages: [],
                 unread: 0
             });
@@ -476,7 +488,6 @@ const App = {
         const conv = this.conversations.get(senderId);
         conv.lastMessage = msg.content;
 
-        // If this is the current open chat, show message
         if (this.currentChat === senderId && this.currentChatType === 'direct') {
             this.addMessageToUI(msg);
             ws.sendReadReceipt(msg.message_id);
@@ -544,7 +555,6 @@ const App = {
     }
 };
 
-// Initialize app
 document.addEventListener('DOMContentLoaded', () => {
     App.init();
 });

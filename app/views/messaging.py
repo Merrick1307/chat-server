@@ -1,14 +1,91 @@
-﻿from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict
 from datetime import datetime
-from typing import Optional, List
-from uuid import UUID
+from typing import Optional, List, Any
 
 from pydantic import BaseModel
 
 from app.views.base import BaseView
 
 
-# Client -> Server (needs validation, hence Pydantic)
+@dataclass(slots=True)
+class MessageData(BaseView):
+    """Response data for a single message."""
+    message_id: str
+    sender_id: str
+    recipient_id: str
+    content: str
+    message_type: str
+    created_at: Any
+    delivered_at: Optional[Any] = None
+    read_at: Optional[Any] = None
+    sender_username: Optional[str] = None
+
+
+@dataclass(slots=True)
+class ConversationResponse(BaseView):
+    """Response for conversation history."""
+    messages: List[dict] = field(default_factory=list)
+    total: int = 0
+    has_more: bool = False
+
+
+@dataclass(slots=True)
+class ConversationSummary(BaseView):
+    """Summary of a conversation for the conversations list."""
+    partner_id: str
+    username: str
+    display_name: str
+    last_message: Optional[str] = None
+    last_message_at: Optional[Any] = None
+    unread_count: int = 0
+
+
+@dataclass(slots=True)
+class MarkAsReadResponse(BaseView):
+    """Response for mark as read operation."""
+    success: bool = True
+
+
+@dataclass(slots=True)
+class GroupData(BaseView):
+    """Response data for a single group."""
+    group_id: str
+    group_name: str
+    creator_id: str
+    created_at: Any
+    member_count: Optional[int] = None
+
+
+@dataclass(slots=True)
+class GroupMemberData(BaseView):
+    """Response data for a group member."""
+    user_id: str
+    username: str
+    display_name: Optional[str] = None
+    role: str = "member"
+    joined_at: Optional[Any] = None
+
+
+@dataclass(slots=True)
+class GroupMembersAddResponse(BaseView):
+    """Response for adding members to a group."""
+    success: bool = True
+    added_count: int = 0
+
+
+@dataclass(slots=True)
+class SuccessResponse(BaseView):
+    """Generic success response."""
+    success: bool = True
+
+
+@dataclass(slots=True)
+class GroupMessagesResponse(BaseView):
+    """Response for group message history."""
+    messages: List[dict] = field(default_factory=list)
+    total: int = 0
+    has_more: bool = False
+
 
 class ClientMessage(BaseModel):
     """Client message schema for direct messages."""

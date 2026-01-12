@@ -54,4 +54,3 @@ class SessionResponse(BaseView):
     user_id: Optional[str] = None
     username: Optional[str] = None
     email: Optional[str] = None
-    role: Optional[str] = None

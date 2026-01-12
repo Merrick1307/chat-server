@@ -3,7 +3,7 @@ from uuid import UUID
 
 from pydantic import EmailStr, Field
 
-from app.models.base import BaseModelSchema, BaseCreateSchema, BaseResponseSchema
+from app.models.base import BaseModelSchema, BaseCreateSchema
 
 
 class UserCreate(BaseCreateSchema):
@@ -15,17 +15,6 @@ class UserCreate(BaseCreateSchema):
     last_name: str = Field(..., min_length=1, max_length=255)
 
 
-class UserResponse(BaseResponseSchema):
-    """Schema for user response."""
-    id: UUID
-    username: str
-    email: str
-    first_name: str
-    last_name: str
-    role: str
-    is_active: bool = True
-
-
 class User(BaseModelSchema):
     """Full user model."""
     id: Optional[UUID] = None
@@ -34,4 +23,3 @@ class User(BaseModelSchema):
     password: str
     first_name: str
     last_name: str
-    role: str = "user"

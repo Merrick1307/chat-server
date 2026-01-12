@@ -1,0 +1,2 @@
+user default off
+user your-redis-user on >your_redis_password allcommands allkeys

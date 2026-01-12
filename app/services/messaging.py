@@ -6,12 +6,6 @@ from asyncpg import Connection
 
 from app.services.base import BaseService
 from app.utils.logs import ErrorLogger
-from app.models.messaging import (
-    Message, MessageResponse,
-    Group, GroupResponse,
-    GroupMember, GroupMemberResponse,
-    GroupMessage, GroupMessageResponse,
-)
 
 
 class MessageService(BaseService):
@@ -50,7 +44,8 @@ class MessageService(BaseService):
     async def get_message(self, message_id: str) -> Optional[dict]:
         """Get a message by ID."""
         query = """
-            SELECT message_id, sender_id, recipient_id, content, message_type,
+            SELECT message_id::text AS message_id, sender_id::text AS sender_id, 
+                   recipient_id::text AS recipient_id, content, message_type,
                    created_at, delivered_at, read_at
             FROM messages WHERE message_id = $1::uuid
         """
@@ -66,12 +61,15 @@ class MessageService(BaseService):
     ) -> List[dict]:
         """Get conversation between two users."""
         query = """
-            SELECT message_id, sender_id, recipient_id, content, message_type,
-                   created_at, delivered_at, read_at
-            FROM messages
-            WHERE (sender_id = $1::uuid AND recipient_id = $2::uuid)
-               OR (sender_id = $2::uuid AND recipient_id = $1::uuid)
-            ORDER BY created_at DESC
+            SELECT m.message_id::text AS message_id, m.sender_id::text AS sender_id, 
+                   m.recipient_id::text AS recipient_id, m.content, m.message_type,
+                   m.created_at, m.delivered_at, m.read_at,
+                   u.username AS sender_username
+            FROM messages m
+            JOIN users u ON m.sender_id = u.id
+            WHERE (m.sender_id = $1::uuid AND m.recipient_id = $2::uuid)
+               OR (m.sender_id = $2::uuid AND m.recipient_id = $1::uuid)
+            ORDER BY m.created_at ASC
             LIMIT $3 OFFSET $4
         """
         rows = await self.db.fetch(query, user1_id, user2_id, limit, offset)
@@ -90,11 +88,15 @@ class MessageService(BaseService):
     async def get_unread_messages(self, user_id: str) -> List[dict]:
         """Get unread messages for a user."""
         query = """
-            SELECT message_id, sender_id, recipient_id, content, message_type,
-                   created_at, delivered_at, read_at
-            FROM messages
-            WHERE recipient_id = $1::uuid AND read_at IS NULL
-            ORDER BY created_at DESC
+            SELECT m.message_id::text AS message_id, m.sender_id::text AS sender_id, 
+                   m.recipient_id::text AS recipient_id, m.content, m.message_type,
+                   m.created_at, m.delivered_at, m.read_at,
+                   u.username AS sender_username,
+                   COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.username) AS sender_display_name
+            FROM messages m
+            JOIN users u ON m.sender_id = u.id
+            WHERE m.recipient_id = $1::uuid AND m.read_at IS NULL
+            ORDER BY m.created_at DESC
         """
         rows = await self.db.fetch(query, user_id)
         return [dict(row) for row in rows]
@@ -118,6 +120,62 @@ class MessageService(BaseService):
         """
         result = await self.db.fetchval(query, message_id, user_id)
         return result is not None
+    
+    async def get_username_by_id(self, user_id: str) -> Optional[str]:
+        """Get username by user ID."""
+        query = "SELECT username FROM users WHERE id = $1::uuid"
+        result = await self.db.fetchval(query, user_id)
+        return result
+    
+    async def get_conversations_list(self, user_id: str) -> List[dict]:
+        """Get list of all conversation partners with last message and unread count."""
+        query = """
+            WITH conversation_partners AS (
+                SELECT DISTINCT
+                    CASE 
+                        WHEN sender_id = $1::uuid THEN recipient_id
+                        ELSE sender_id
+                    END AS partner_id
+                FROM messages
+                WHERE sender_id = $1::uuid OR recipient_id = $1::uuid
+            ),
+            last_messages AS (
+                SELECT DISTINCT ON (partner_id)
+                    cp.partner_id,
+                    m.message_id,
+                    m.content,
+                    m.created_at,
+                    m.sender_id
+                FROM conversation_partners cp
+                JOIN messages m ON (
+                    (m.sender_id = $1::uuid AND m.recipient_id = cp.partner_id)
+                    OR (m.sender_id = cp.partner_id AND m.recipient_id = $1::uuid)
+                )
+                ORDER BY cp.partner_id, m.created_at DESC
+            ),
+            unread_counts AS (
+                SELECT 
+                    sender_id AS partner_id,
+                    COUNT(*) AS unread_count
+                FROM messages
+                WHERE recipient_id = $1::uuid AND read_at IS NULL
+                GROUP BY sender_id
+            )
+            SELECT 
+                lm.partner_id::text AS partner_id,
+                u.username,
+                COALESCE(NULLIF(TRIM(u.first_name || ' ' || u.last_name), ''), u.username) AS display_name,
+                lm.content AS last_message,
+                lm.created_at AS last_message_at,
+                lm.sender_id::text AS last_message_sender_id,
+                COALESCE(uc.unread_count, 0) AS unread_count
+            FROM last_messages lm
+            JOIN users u ON lm.partner_id = u.id
+            LEFT JOIN unread_counts uc ON lm.partner_id = uc.partner_id
+            ORDER BY lm.created_at DESC
+        """
+        rows = await self.db.fetch(query, user_id)
+        return [dict(row) for row in rows]
     
     async def get_message_sender(self, message_id: str) -> Optional[str]:
         """Get the sender_id for a message."""
@@ -282,7 +340,8 @@ class GroupMessageService(BaseService):
     async def get_group_message(self, message_id: str) -> Optional[dict]:
         """Get a group message by ID."""
         query = """
-            SELECT message_id, group_id, sender_id, content, message_type, created_at
+            SELECT message_id::text AS message_id, group_id::text AS group_id, 
+                   sender_id::text AS sender_id, content, message_type, created_at
             FROM group_messages WHERE message_id = $1::uuid
         """
         row = await self.db.fetchrow(query, message_id)
@@ -296,12 +355,13 @@ class GroupMessageService(BaseService):
     ) -> List[dict]:
         """Get messages for a group."""
         query = """
-            SELECT gm.message_id, gm.group_id, gm.sender_id, gm.content,
+            SELECT gm.message_id::text AS message_id, gm.group_id::text AS group_id, 
+                   gm.sender_id::text AS sender_id, gm.content,
                    gm.message_type, gm.created_at, u.username as sender_username
             FROM group_messages gm
             JOIN users u ON gm.sender_id = u.id
             WHERE gm.group_id = $1::uuid
-            ORDER BY gm.created_at DESC
+            ORDER BY gm.created_at ASC
             LIMIT $2 OFFSET $3
         """
         rows = await self.db.fetch(query, group_id, limit, offset)
@@ -327,7 +387,8 @@ class GroupMessageService(BaseService):
     async def get_unread_group_messages(self, group_id: str, user_id: str) -> List[dict]:
         """Get unread group messages for a user."""
         query = """
-            SELECT gm.message_id, gm.group_id, gm.sender_id, gm.content,
+            SELECT gm.message_id::text AS message_id, gm.group_id::text AS group_id, 
+                   gm.sender_id::text AS sender_id, gm.content,
                    gm.message_type, gm.created_at
             FROM group_messages gm
             LEFT JOIN group_message_reads gmr 
@@ -335,7 +396,7 @@ class GroupMessageService(BaseService):
             WHERE gm.group_id = $1::uuid 
                 AND gm.sender_id != $2::uuid
                 AND gmr.message_id IS NULL
-            ORDER BY gm.created_at DESC
+            ORDER BY gm.created_at ASC
         """
         rows = await self.db.fetch(query, group_id, user_id)
         return [dict(row) for row in rows]

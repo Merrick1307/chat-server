@@ -1,5 +1,5 @@
 import logging
-import json
+import orjson
 import sys
 
 from typing import Optional
@@ -31,27 +31,27 @@ class ErrorLogger:
 
     def info(self, message: str, **kwargs):
         """Log info message."""
-        extra_str = f" | {json.dumps(kwargs)}" if kwargs else ""
+        extra_str = f" | {orjson.dumps(kwargs).decode()}" if kwargs else ""
         self.logger.info(f"{message}{extra_str}")
 
     def warning(self, message: str, **kwargs):
         """Log warning message."""
-        extra_str = f" | {json.dumps(kwargs)}" if kwargs else ""
+        extra_str = f" | {orjson.dumps(kwargs).decode()}" if kwargs else ""
         self.logger.warning(f"{message}{extra_str}")
 
     def error(self, message: str, **kwargs):
         """Log error message."""
-        extra_str = f" | {json.dumps(kwargs)}" if kwargs else ""
+        extra_str = f" | {orjson.dumps(kwargs).decode()}" if kwargs else ""
         self.logger.error(f"{message}{extra_str}")
 
     def critical(self, message: str, **kwargs):
         """Log critical error."""
-        extra_str = f" | {json.dumps(kwargs)}" if kwargs else ""
+        extra_str = f" | {orjson.dumps(kwargs).decode()}" if kwargs else ""
         self.logger.critical(f"{message}{extra_str}")
 
     def debug(self, message: str, **kwargs):
         """Log debug message."""
-        extra_str = f" | {json.dumps(kwargs)}" if kwargs else ""
+        extra_str = f" | {orjson.dumps(kwargs).decode()}" if kwargs else ""
         self.logger.debug(f"{message}{extra_str}")
 
     def exception(self, message: str, exc: Exception, **kwargs):
@@ -61,7 +61,7 @@ class ErrorLogger:
             'error_message': str(exc),
             **kwargs
         }
-        extra_str = f" | {json.dumps(error_data)}"
+        extra_str = f" | {orjson.dumps(error_data).decode()}"
         self.logger.exception(f"{message}{extra_str}", exc_info=exc)
 
     def log_system_error(self, context: str, error: Exception, **kwargs):

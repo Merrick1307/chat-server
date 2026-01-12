@@ -1,10 +1,16 @@
 const API = {
-    baseUrl: 'http://localhost:8000',
+    baseUrl: 'http://localhost:8500',
     token: null,
+    refreshToken: null,
 
     setToken(token) {
         this.token = token;
         localStorage.setItem('auth_token', token);
+    },
+
+    setRefreshToken(token) {
+        this.refreshToken = token;
+        localStorage.setItem('refresh_token', token);
     },
 
     getToken() {
@@ -14,9 +20,18 @@ const API = {
         return this.token;
     },
 
+    getRefreshToken() {
+        if (!this.refreshToken) {
+            this.refreshToken = localStorage.getItem('refresh_token');
+        }
+        return this.refreshToken;
+    },
+
     clearToken() {
         this.token = null;
+        this.refreshToken = null;
         localStorage.removeItem('auth_token');
+        localStorage.removeItem('refresh_token');
         localStorage.removeItem('user_data');
     },
 
@@ -31,64 +46,70 @@ const API = {
             headers['Authorization'] = `Bearer ${this.getToken()}`;
         }
 
-        try {
-            const response = await fetch(url, {
-                ...options,
-                headers
-            });
+        const response = await fetch(url, { ...options, headers });
+        const data = await response.json().catch(() => ({}));
 
-            if (response.status === 401) {
-                this.clearToken();
-                window.location.reload();
-                return null;
-            }
-
-            const data = await response.json();
-            
-            if (!response.ok) {
-                throw new Error(data.detail || 'Request failed');
-            }
-
-            return data;
-        } catch (error) {
-            console.error('API Error:', error);
-            throw error;
+        if (response.status === 401) {
+            this.clearToken();
+            window.location.reload();
+            throw new Error(data.detail || 'Unauthorized');
         }
-    },
 
-    // Auth endpoints
-    async login(email, password) {
-        const formData = new URLSearchParams();
-        formData.append('username', email);
-        formData.append('password', password);
-
-        const response = await fetch(`${this.baseUrl}/auth/login`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/x-www-form-urlencoded'
-            },
-            body: formData
-        });
-
-        const data = await response.json();
-        
         if (!response.ok) {
-            throw new Error(data.detail || 'Login failed');
+            const errorMsg = typeof data.detail === 'string' ? data.detail : JSON.stringify(data.detail) || `Request failed: ${response.status}`;
+            throw new Error(errorMsg);
         }
 
-        return data;
+        return data.data !== undefined ? data.data : data;
     },
 
-    async signup(username, email, password) {
-        return this.request('/auth/signup', {
+    async login(username, password) {
+        const response = await fetch(`${this.baseUrl}/api/v1/auth/login`, {
             method: 'POST',
-            body: JSON.stringify({ username, email, password })
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, password })
         });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(data.detail || data.error?.message || 'Login failed');
+        }
+
+        return data.data !== undefined ? data.data : data;
+    },
+
+    async signup(username, email, password, firstName, lastName) {
+        const response = await fetch(`${this.baseUrl}/api/v1/auth/signup`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                username,
+                email,
+                password,
+                first_name: firstName,
+                last_name: lastName
+            })
+        });
+
+        const data = await response.json().catch(() => ({}));
+
+        if (!response.ok) {
+            throw new Error(data.detail || data.error?.message || 'Signup failed');
+        }
+
+        return data.data !== undefined ? data.data : data;
     },
 
     async logout() {
+        const refreshToken = this.getRefreshToken();
         try {
-            await this.request('/auth/logout', { method: 'POST' });
+            if (refreshToken) {
+                await this.request('/api/v1/auth/logout', {
+                    method: 'POST',
+                    body: JSON.stringify({ refresh_token: refreshToken })
+                });
+            }
         } finally {
             this.clearToken();
         }
@@ -104,6 +125,10 @@ const API = {
                 message_type: messageType
             })
         });
+    },
+
+    async getConversationsList() {
+        return this.request('/api/v1/messages/conversations');
     },
 
     async getConversation(userId, limit = 50, offset = 0) {
@@ -158,5 +183,10 @@ const API = {
 
     async getGroupMessages(groupId, limit = 50, offset = 0) {
         return this.request(`/api/v1/groups/${groupId}/messages?limit=${limit}&offset=${offset}`);
+    },
+
+    // User lookup
+    async lookupUser(username) {
+        return this.request(`/api/v1/auth/users/lookup/${encodeURIComponent(username)}`);
     }
 };

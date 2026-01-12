@@ -16,6 +16,15 @@ steps = [
             created_at TIMESTAMPTZ DEFAULT NOW(),
             updated_at TIMESTAMPTZ DEFAULT NOW()
         )
+        """,
+        """
+        DROP TABLE IF EXISTS users;
+        """
+    ),
+
+    step(
+        """
+        CREATE INDEX idx_users_id ON users (id);
         """
     )
 ]

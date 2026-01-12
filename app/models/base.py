@@ -17,10 +17,5 @@ class BaseCreateSchema(BaseModelSchema):
 
 
 class BaseUpdateSchema(BaseModelSchema):
-    """Base schema for update operations - all fields optional."""
-    pass
-
-
-class BaseResponseSchema(BaseModelSchema):
-    """Base schema for API responses."""
+    """Base schema for update operations."""
     pass

@@ -41,7 +41,7 @@ class AuthService(BaseService):
         """Hash refresh token for storage."""
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
     
-    async def _generate_tokens(self, user_id: UUID, email: str, username: str, role: str) -> dict:
+    async def _generate_tokens(self, user_id: UUID, email: str, username: str) -> dict:
         """Generate access and refresh tokens."""
         now = int(time.time())
         
@@ -49,7 +49,6 @@ class AuthService(BaseService):
             "sub": email,
             "user_id": str(user_id),
             "username": username,
-            "role": role,
             "iat": now,
             "exp": now + self.ACCESS_TOKEN_EXPIRY,
             "type": "access"
@@ -102,16 +101,16 @@ class AuthService(BaseService):
         
         user = await self.db.fetchrow(
             """
-            INSERT INTO users (username, email, password, first_name, last_name, role)
-            VALUES ($1, $2, $3, $4, $5, 'user')
-            RETURNING id, username, email, role
+            INSERT INTO users (username, email, password, first_name, last_name)
+            VALUES ($1, $2, $3, $4, $5)
+            RETURNING id, username, email
             """,
             username, email, password_hash, first_name, last_name
         )
         
         user_id = user["id"]
         tokens = await self._generate_tokens(
-            user_id, user["email"], user["username"], user["role"]
+            user_id, user["email"], user["username"]
         )
         
         token_hash = self._hash_token(tokens["refresh_token"])
@@ -142,7 +141,7 @@ class AuthService(BaseService):
         """
         user = await self.db.fetchrow(
             """
-            SELECT id, username, email, password, role
+            SELECT id, username, email, password
             FROM users
             WHERE username = $1 OR email = $1
             """,
@@ -156,7 +155,7 @@ class AuthService(BaseService):
             raise ValueError("Invalid credentials")
         
         tokens = await self._generate_tokens(
-            user["id"], user["email"], user["username"], user["role"]
+            user["id"], user["email"], user["username"]
         )
         
         token_hash = self._hash_token(tokens["refresh_token"])
@@ -227,7 +226,7 @@ class AuthService(BaseService):
         
         stored_token = await self.db.fetchrow(
             """
-            SELECT rt.token_id, rt.user_id, u.username, u.email, u.role
+            SELECT rt.token_id, rt.user_id, u.username, u.email
             FROM refresh_tokens rt
             JOIN users u ON rt.user_id = u.id
             WHERE rt.token_hash = $1 
@@ -248,8 +247,7 @@ class AuthService(BaseService):
         tokens = await self._generate_tokens(
             stored_token["user_id"],
             stored_token["email"],
-            stored_token["username"],
-            stored_token["role"]
+            stored_token["username"]
         )
         
         new_token_hash = self._hash_token(tokens["refresh_token"])
@@ -277,7 +275,7 @@ class AuthService(BaseService):
         """
         user = await self.db.fetchrow(
             """
-            SELECT id, username, email, role, created_at
+            SELECT id, username, email, created_at
             FROM users
             WHERE id = $1
             """,
@@ -291,6 +289,30 @@ class AuthService(BaseService):
             "valid": True,
             "user_id": str(user["id"]),
             "username": user["username"],
-            "email": user["email"],
-            "role": user["role"]
+            "email": user["email"]
+        }
+    
+    async def lookup_user(self, username: str) -> dict:
+        """
+        Look up a user by username.
+        
+        Returns:
+            dict with user_id, username if found, None otherwise
+        """
+        user = await self.db.fetchrow(
+            """
+            SELECT id, username, first_name, last_name
+            FROM users
+            WHERE username = $1
+            """,
+            username
+        )
+        
+        if not user:
+            return None
+        
+        return {
+            "user_id": str(user["id"]),
+            "username": user["username"],
+            "display_name": f"{user['first_name']} {user['last_name']}".strip() or user["username"]
         }

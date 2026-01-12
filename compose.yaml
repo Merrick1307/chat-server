@@ -1,0 +1,68 @@
+services:
+    chat-server:
+        build: .
+        ports:
+            - "8500:8500"
+        depends_on:
+            postgres-db:
+              condition: service_healthy
+            redis-cache:
+              condition: service_healthy
+
+        environment:
+          - DATABASE_USER=${DATABASE_USER}
+          - DATABASE_PASSWORD=${DATABASE_PASSWORD}
+          - DATABASE_NAME=${DATABASE_NAME}
+          - REDIS_HOST=${REDIS_HOST}
+          - REDIS_PORT=${REDIS_PORT}
+          - REDIS_PASSWORD=${REDIS_PASSWORD}
+          - REDIS_USER=${REDIS_USER}
+          - REDIS_DB=${REDIS_DB}
+          - JWT_SECRET=${JWT_SECRET}
+
+    chat-client:
+      build: .
+      command: ["python", "client/run_client_server.py"]
+      ports:
+        - "3005:3005"
+      depends_on:
+        postgres-db:
+          condition: service_healthy
+        redis-cache:
+          condition: service_healthy
+
+
+    postgres-db:
+        image: postgres:17-alpine
+
+        environment:
+          - POSTGRES_USER=${DATABASE_USER}
+          - POSTGRES_PASSWORD=${DATABASE_PASSWORD}
+          - POSTGRES_DB=${DATABASE_NAME}
+
+        volumes:
+          - postgres_data:/var/lib/postgresql/data
+        healthcheck:
+          test: [ "CMD-SHELL", "pg_isready -U postgres -d ${DATABASE_NAME}" ]
+          interval: 5s
+          timeout: 5s
+          retries: 5
+
+    redis-cache:
+      image: redis:7-alpine
+      ports:
+        - "6379:6379"
+      command: [ "redis-server", "--aclfile", "/data/users.acl" ]
+      volumes:
+        - redis_data:/data
+        - ./users.acl:/data/users.acl
+      healthcheck:
+        test: [ "CMD", "redis-cli", "ping" ]
+        interval: 5s
+        timeout: 5s
+        retries: 5
+
+
+volumes:
+    postgres_data:
+    redis_data:

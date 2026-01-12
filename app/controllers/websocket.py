@@ -1,11 +1,11 @@
-﻿from typing import Annotated
+from typing import Annotated
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect, Depends
 from asyncpg import Connection
 
-from app.dependencies.database import acquire_db_connection
+from app.dependencies.database import acquire_ws_db_connection
 from app.dependencies.cache import get_cache_service, get_ws_manager
-from app.utils.jwts import VerifiedTokenData, verify_and_return_jwt_payload
+from app.utils.jwts import VerifiedTokenData, verify_and_return_jwt_payload_ws
 from app.websocket.manager import WebSocketManager
 from app.websocket.handler import WebSocketHandler
 from app.cache import WebSocketCacheService
@@ -18,8 +18,8 @@ router = APIRouter(tags=["websocket"])
 @router.websocket("/message")
 async def websocket_endpoint(
     websocket: WebSocket,
-    db: Annotated[Connection, Depends(acquire_db_connection)],
-    auth: Annotated[VerifiedTokenData, Depends(verify_and_return_jwt_payload)],
+    db: Annotated[Connection, Depends(acquire_ws_db_connection)],
+    auth: Annotated[VerifiedTokenData, Depends(verify_and_return_jwt_payload_ws)],
     manager: Annotated[WebSocketManager, Depends(get_ws_manager)],
     cache: Annotated[WebSocketCacheService, Depends(get_cache_service)],
 ):
@@ -44,7 +44,8 @@ async def websocket_endpoint(
     - pong: Heartbeat response
     - error: Error message
     """
-    user_id = auth.username
+    user_id = auth.user_id
+    username = auth.username
 
     handler = WebSocketHandler(
         manager=manager,
@@ -60,7 +61,7 @@ async def websocket_endpoint(
         try:
             while True:
                 raw_message = await websocket.receive_text()
-                await handler.handle_message(user_id, websocket, raw_message)
+                await handler.handle_message(user_id, websocket, raw_message, username=username)
         except WebSocketDisconnect:
             pass
 

@@ -15,7 +15,7 @@ class ChatWebSocket {
             return;
         }
 
-        const wsUrl = `ws://localhost:8000/ws?token=${token}`;
+        const wsUrl = `ws://localhost:8500/message?token=${token}`;
         
         try {
             this.ws = new WebSocket(wsUrl);

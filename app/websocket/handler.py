@@ -1,5 +1,5 @@
-﻿from typing import Optional
-import json
+from typing import Optional
+import orjson
 import asyncio
 from uuid import uuid4
 from datetime import datetime, timezone
@@ -43,10 +43,10 @@ class WebSocketHandler:
         self.group_service = group_service
         self.group_message_service = group_message_service
     
-    async def handle_message(self, user_id: str, websocket: WebSocket, raw_message: str) -> None:
+    async def handle_message(self, user_id: str, websocket: WebSocket, raw_message: str, **kwargs) -> None:
         """Route incoming WebSocket message to appropriate handler."""
         try:
-            data = json.loads(raw_message)
+            data = orjson.loads(raw_message)
             msg_type = data.get("type", "")
             
             handlers = {
@@ -59,16 +59,16 @@ class WebSocketHandler:
             
             handler = handlers.get(msg_type)
             if handler:
-                await handler(user_id, websocket, data)
+                await handler(user_id, websocket, data, **kwargs)
             else:
                 await self._send_error(websocket, "UNKNOWN_TYPE", f"Unknown message type: {msg_type}")
                 
-        except json.JSONDecodeError:
+        except orjson.JSONDecodeError:
             await self._send_error(websocket, "INVALID_JSON", "Invalid JSON format")
         except Exception as e:
             await self._send_error(websocket, "INTERNAL_ERROR", str(e))
     
-    async def _handle_direct_message(self, sender_id: str, websocket: WebSocket, data: dict) -> None:
+    async def _handle_direct_message(self, sender_id: str, websocket: WebSocket, data: dict, **kwargs) -> None:
         """Handle direct message send."""
         recipient_id = data.get("recipient_id")
         content = data.get("content", "")
@@ -87,10 +87,13 @@ class WebSocketHandler:
         
         is_online = await self.manager.is_user_online(recipient_id)
         
+        sender_username = await self.message_service.get_username_by_id(sender_id)
+        
         outgoing_message = {
             "type": self.MSG_NEW,
             "message_id": message_id,
             "sender_id": sender_id,
+            "sender_username": sender_username,
             "content": content,
             "message_type": message_type,
             "created_at": timestamp
@@ -110,7 +113,7 @@ class WebSocketHandler:
             await self.cache.queue_offline_message(recipient_id, message_id, "direct")
             await self._send_ack(websocket, message_id, delivered=False, queued=True)
     
-    async def _handle_group_message(self, sender_id: str, websocket: WebSocket, data: dict) -> None:
+    async def _handle_group_message(self, sender_id: str, websocket: WebSocket, data: dict, **kwargs) -> None:
         """Handle group message send."""
         group_id = data.get("group_id")
         content = data.get("content", "")
@@ -158,7 +161,7 @@ class WebSocketHandler:
         
         await self._send_ack(websocket, message_id, delivered=len(delivered_to) > 0, delivered_count=len(delivered_to))
     
-    async def _handle_read_receipt(self, user_id: str, websocket: WebSocket, data: dict) -> None:
+    async def _handle_read_receipt(self, user_id: str, websocket: WebSocket, data: dict, **kwargs) -> None:
         """Handle message read receipt."""
         message_id = data.get("message_id")
         
@@ -178,7 +181,7 @@ class WebSocketHandler:
             }
             await self.manager.send_to_user(sender_id, read_notification)
     
-    async def _handle_typing(self, user_id: str, websocket: WebSocket, data: dict) -> None:
+    async def _handle_typing(self, user_id: str, websocket: WebSocket, data: dict, **kwargs) -> None:
         """Handle typing indicator."""
         recipient_id = data.get("recipient_id")
         group_id = data.get("group_id")
@@ -186,7 +189,7 @@ class WebSocketHandler:
         
         typing_message = {
             "type": self.MSG_TYPING,
-            "user_id": user_id,
+            "user_id": kwargs.get("username"),
             "is_typing": is_typing
         }
         
@@ -197,10 +200,10 @@ class WebSocketHandler:
             member_ids = await self.group_service.get_group_members(group_id)
             await self.manager.send_to_users(member_ids, typing_message, exclude_user=user_id)
     
-    async def _handle_ping(self, user_id: str, websocket: WebSocket, data: dict) -> None:
+    async def _handle_ping(self, user_id: str, websocket: WebSocket, data: dict, **kwargs) -> None:
         """Handle heartbeat ping."""
         await self.manager.refresh_heartbeat(user_id)
-        await websocket.send_text(json.dumps({"type": self.MSG_PONG}))
+        await websocket.send_text(orjson.dumps({"type": self.MSG_PONG}).decode())
     
     async def deliver_offline_messages(self, user_id: str, websocket: WebSocket) -> None:
         """Deliver queued offline messages when user connects."""
@@ -236,7 +239,7 @@ class WebSocketHandler:
                 "messages": messages,
                 "count": len(messages)
             }
-            await websocket.send_text(json.dumps(batch_message))
+            await websocket.send_text(orjson.dumps(batch_message).decode())
             
             for msg in messages:
                 if msg.get("type") == "direct":
@@ -246,11 +249,11 @@ class WebSocketHandler:
     
     async def _send_error(self, websocket: WebSocket, code: str, message: str) -> None:
         """Send error message to client."""
-        await websocket.send_text(json.dumps({
+        await websocket.send_text(orjson.dumps({
             "type": self.MSG_ERROR,
             "code": code,
             "message": message
-        }))
+        }).decode())
     
     async def _send_ack(
         self, 
@@ -270,4 +273,4 @@ class WebSocketHandler:
         }
         if delivered_count:
             ack["delivered_count"] = delivered_count
-        await websocket.send_text(json.dumps(ack))
+        await websocket.send_text(orjson.dumps(ack).decode())
