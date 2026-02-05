@@ -6,7 +6,7 @@ A real-time chat server built with FastAPI enabling one-to-one and group messagi
 
 ### Core Requirements
 1. **Complete Authentication System** - Signup, login, logout, forgot/reset password, session check, session refresh
-2. **One-to-One Chat** - Direct messaging between two users
+2. **One-to-One Chat** - Direct messaging between two users on the system
 3. **Group Chat** - Multi-user conversations
 4. **Real-time Delivery** - WebSocket-based instant messaging
 5. **Persistent Storage** - All messages stored in PostgreSQL database
