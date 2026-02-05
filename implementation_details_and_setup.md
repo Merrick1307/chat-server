@@ -27,7 +27,7 @@ This document covers the architectural decisions, design patterns, and technical
 
 ### Prerequisites
 
-- Python 3.12+
+- Python 3.14+
 - PostgreSQL 14+
 - Redis 7+
 - Docker and Docker Compose (recommended)
