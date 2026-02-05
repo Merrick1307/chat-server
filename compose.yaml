@@ -19,6 +19,14 @@ services:
           - REDIS_USER=${REDIS_USER}
           - REDIS_DB=${REDIS_DB}
           - JWT_SECRET=${JWT_SECRET}
+          - MAIL_USERNAME=${MAIL_USERNAME}
+          - MAIL_PASSWORD=${MAIL_PASSWORD}
+          - MAIL_FROM=${MAIL_FROM}
+          - MAIL_SERVER=${MAIL_SERVER:-smtp.gmail.com}
+          - MAIL_PORT=${MAIL_PORT:-587}
+          - MAIL_STARTTLS=${MAIL_STARTTLS:-1}
+          - MAIL_SSL_TLS=${MAIL_SSL_TLS:-0}
+          - CLIENT_BASE_URL=${CLIENT_BASE_URL:-http://localhost:3005}
 
     chat-client:
       build: .

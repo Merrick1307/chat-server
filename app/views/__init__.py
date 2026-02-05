@@ -8,6 +8,8 @@ from app.views.auth import (
     TokenResponse,
     LogoutResponse,
     SessionResponse,
+    PasswordResetRequest,
+    PasswordResetConfirm,
 )
 from app.views.messaging import (
     MessageData,
@@ -41,6 +43,11 @@ from app.views.responses import (
     ErrorBody,
     ErrorDetail,
 )
+from app.views.admin import (
+    UpdateRoleRequest,
+    CreateGroupRequest,
+    AdminUserSearchParams,
+)
 
 __all__ = [
     "BaseView",
@@ -52,6 +59,8 @@ __all__ = [
     "TokenResponse",
     "LogoutResponse",
     "SessionResponse",
+    "PasswordResetRequest",
+    "PasswordResetConfirm",
     "MessageData",
     "ConversationResponse",
     "ConversationSummary",
@@ -80,4 +89,7 @@ __all__ = [
     "ErrorResponse",
     "ErrorBody",
     "ErrorDetail",
+    "UpdateRoleRequest",
+    "CreateGroupRequest",
+    "AdminUserSearchParams",
 ]

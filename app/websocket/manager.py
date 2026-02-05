@@ -148,3 +148,7 @@ class WebSocketManager:
     def get_total_connection_count(self) -> int:
         """Get total number of WebSocket connections on this server."""
         return sum(len(conns) for conns in self.active_connections.values())
+    
+    def get_connected_users(self) -> list[str]:
+        """Get list of all connected user IDs."""
+        return list(self.active_connections.keys())

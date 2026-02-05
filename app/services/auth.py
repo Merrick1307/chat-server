@@ -41,7 +41,7 @@ class AuthService(BaseService):
         """Hash refresh token for storage."""
         return hashlib.sha256(token.encode("utf-8")).hexdigest()
     
-    async def _generate_tokens(self, user_id: UUID, email: str, username: str) -> dict:
+    async def _generate_tokens(self, user_id: UUID, email: str, username: str, role: str) -> dict:
         """Generate access and refresh tokens."""
         now = int(time.time())
         
@@ -49,6 +49,7 @@ class AuthService(BaseService):
             "sub": email,
             "user_id": str(user_id),
             "username": username,
+            "role": role,
             "iat": now,
             "exp": now + self.ACCESS_TOKEN_EXPIRY,
             "type": "access"
@@ -101,16 +102,16 @@ class AuthService(BaseService):
         
         user = await self.db.fetchrow(
             """
-            INSERT INTO users (username, email, password, first_name, last_name)
-            VALUES ($1, $2, $3, $4, $5)
-            RETURNING id, username, email
+            INSERT INTO users (username, email, password, first_name, last_name, role)
+            VALUES ($1, $2, $3, $4, $5, 'user')
+            RETURNING id, username, email, role
             """,
             username, email, password_hash, first_name, last_name
         )
         
         user_id = user["id"]
         tokens = await self._generate_tokens(
-            user_id, user["email"], user["username"]
+            user_id, user["email"], user["username"], user["role"]
         )
         
         token_hash = self._hash_token(tokens["refresh_token"])
@@ -141,7 +142,7 @@ class AuthService(BaseService):
         """
         user = await self.db.fetchrow(
             """
-            SELECT id, username, email, password
+            SELECT id, username, email, password, role
             FROM users
             WHERE username = $1 OR email = $1
             """,
@@ -155,7 +156,7 @@ class AuthService(BaseService):
             raise ValueError("Invalid credentials")
         
         tokens = await self._generate_tokens(
-            user["id"], user["email"], user["username"]
+            user["id"], user["email"], user["username"], user["role"]
         )
         
         token_hash = self._hash_token(tokens["refresh_token"])
@@ -226,7 +227,7 @@ class AuthService(BaseService):
         
         stored_token = await self.db.fetchrow(
             """
-            SELECT rt.token_id, rt.user_id, u.username, u.email
+            SELECT rt.token_id, rt.user_id, u.username, u.email, u.role
             FROM refresh_tokens rt
             JOIN users u ON rt.user_id = u.id
             WHERE rt.token_hash = $1 
@@ -247,7 +248,8 @@ class AuthService(BaseService):
         tokens = await self._generate_tokens(
             stored_token["user_id"],
             stored_token["email"],
-            stored_token["username"]
+            stored_token["username"],
+            stored_token["role"]
         )
         
         new_token_hash = self._hash_token(tokens["refresh_token"])
@@ -275,7 +277,7 @@ class AuthService(BaseService):
         """
         user = await self.db.fetchrow(
             """
-            SELECT id, username, email, created_at
+            SELECT id, username, email, role, created_at
             FROM users
             WHERE id = $1
             """,
@@ -289,7 +291,8 @@ class AuthService(BaseService):
             "valid": True,
             "user_id": str(user["id"]),
             "username": user["username"],
-            "email": user["email"]
+            "email": user["email"],
+            "role": user["role"]
         }
     
     async def lookup_user(self, username: str) -> dict:
@@ -316,3 +319,59 @@ class AuthService(BaseService):
             "username": user["username"],
             "display_name": f"{user['first_name']} {user['last_name']}".strip() or user["username"]
         }
+    
+    async def request_password_reset(self, email: str) -> dict:
+        """
+        Initiate password reset process.
+        
+        Returns:
+            dict with user info if found, None if email not found
+        """
+        user = await self.db.fetchrow(
+            """
+            SELECT id, username, email, first_name, last_name
+            FROM users
+            WHERE email = $1
+            """,
+            email
+        )
+        
+        if not user:
+            return None
+        
+        return {
+            "user_id": str(user["id"]),
+            "email": user["email"],
+            "first_name": user["first_name"],
+            "last_name": user["last_name"]
+        }
+    
+    async def reset_password(self, user_id: str, new_password: str) -> bool:
+        """
+        Reset user's password.
+        
+        Returns:
+            True if password was updated successfully
+        """
+        password_hash = self._hash_password(new_password)
+        
+        result = await self.db.execute(
+            """
+            UPDATE users 
+            SET password = $1, updated_at = NOW()
+            WHERE id = $2
+            """,
+            password_hash, UUID(user_id)
+        )
+        
+        await self.db.execute(
+            """
+            UPDATE refresh_tokens 
+            SET revoked = true 
+            WHERE user_id = $1 AND revoked = false
+            """,
+            UUID(user_id)
+        )
+        
+        await self.log_info(f"Password reset for user {user_id}")
+        return "UPDATE" in result

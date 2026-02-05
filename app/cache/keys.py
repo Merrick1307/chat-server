@@ -1,4 +1,4 @@
-﻿class RedisKeys:
+class RedisKeys:
     """Redis key patterns for the chat application."""
     
     # Key prefixes
@@ -6,11 +6,13 @@
     OFFLINE_QUEUE_PREFIX = "offline_queue:"
     WS_CONNECTIONS_KEY = "ws_connections"
     TYPING_PREFIX = "typing:"
+    PASSWORD_RESET_PREFIX = "pwd_reset:"
     
     # TTL values (in seconds)
     ONLINE_TTL = 300  # 5 minutes
     OFFLINE_QUEUE_TTL = 2592000  # 30 days
     TYPING_TTL = 5  # 5 seconds
+    PASSWORD_RESET_TTL = 3600  # 1 hour
     
     @staticmethod
     def user_online(user_id: str) -> str:
@@ -31,3 +33,8 @@
     def ws_connections() -> str:
         """Key for WebSocket connections hash."""
         return RedisKeys.WS_CONNECTIONS_KEY
+    
+    @staticmethod
+    def password_reset_token(token_hash: str) -> str:
+        """Key for password reset token (stores user_id)."""
+        return f"{RedisKeys.PASSWORD_RESET_PREFIX}{token_hash}"

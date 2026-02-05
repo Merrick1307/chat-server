@@ -54,3 +54,15 @@ class SessionResponse(BaseView):
     user_id: Optional[str] = None
     username: Optional[str] = None
     email: Optional[str] = None
+    role: Optional[str] = None
+
+
+class PasswordResetRequest(BaseModel):
+    """Request schema for password reset request."""
+    email: EmailStr
+
+
+class PasswordResetConfirm(BaseModel):
+    """Request schema for password reset confirmation."""
+    token: str
+    new_password: str = Field(..., min_length=8)

@@ -8,9 +8,11 @@ Complete API documentation for the Punch Chat Server.
 
 1. [Response Format](#response-format)
 2. [Authentication](#authentication)
-3. [Messages](#messages)
-4. [Groups](#groups)
-5. [WebSocket](#websocket)
+3. [Password Reset](#password-reset)
+4. [Messages](#messages)
+5. [Groups](#groups)
+6. [Admin](#admin)
+7. [WebSocket](#websocket)
 
 ---
 
@@ -297,6 +299,82 @@ Look up a user by username to get their user_id.
 
 **Errors:**
 - `404 Not Found`: User not found
+
+---
+
+## Password Reset
+
+Base path: `/api/v1/auth`
+
+### POST /password/reset-request
+
+Request a password reset email.
+
+**Request Body:**
+
+```json
+{
+  "email": "john@example.com"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| email | string | Yes | Email address associated with the account |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "success": true
+  },
+  "message": "If an account exists with this email, a reset link has been sent.",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**Note:** For security, this endpoint always returns success even if the email is not found. The reset token is stored in Redis with a 1-hour TTL.
+
+---
+
+### POST /password/reset
+
+Reset password using the token from the email.
+
+**Request Body:**
+
+```json
+{
+  "token": "abc123...",
+  "new_password": "newsecurepass123"
+}
+```
+
+| Field | Type | Required | Constraints |
+|-------|------|----------|-------------|
+| token | string | Yes | Reset token from email |
+| new_password | string | Yes | Minimum 8 characters |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "success": true
+  },
+  "message": "Password has been reset successfully. Please login with your new password.",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**Errors:**
+- `400 Bad Request`: Invalid or expired reset token
+- `400 Bad Request`: Password must be at least 8 characters
+
+**Security:** Token is invalidated after successful use to prevent replay attacks.
 
 ---
 
@@ -704,6 +782,409 @@ Get paginated message history for a group.
   "timestamp": "2024-01-15T10:30:00Z"
 }
 ```
+
+---
+
+## Admin
+
+Base path: `/api/v1/admin`
+
+All admin endpoints require Authorization header with an admin role JWT.
+
+### GET /stats
+
+Get system-wide statistics.
+
+**Headers:** Requires Authorization (Admin)
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "total_users": 150,
+    "total_groups": 25,
+    "total_direct_messages": 5000,
+    "total_group_messages": 2000,
+    "online_users": 42,
+    "active_connections": 58
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+---
+
+### GET /users
+
+Get paginated list of all users.
+
+**Headers:** Requires Authorization (Admin)
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| limit | integer | 50 | Users per page (1-100) |
+| offset | integer | 0 | Users to skip |
+| search | string | null | Search by username/email |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "users": [
+      {
+        "id": "550e8400-e29b-41d4-a716-446655440000",
+        "username": "johndoe",
+        "email": "john@example.com",
+        "first_name": "John",
+        "last_name": "Doe",
+        "role": "user",
+        "created_at": "2024-01-15T10:30:00Z"
+      }
+    ],
+    "has_more": true
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+---
+
+### GET /users/{user_id}
+
+Get detailed user information.
+
+**Headers:** Requires Authorization (Admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| user_id | UUID | User ID |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "id": "550e8400-e29b-41d4-a716-446655440000",
+    "username": "johndoe",
+    "email": "john@example.com",
+    "first_name": "John",
+    "last_name": "Doe",
+    "role": "user",
+    "created_at": "2024-01-15T10:30:00Z",
+    "updated_at": "2024-01-16T08:00:00Z",
+    "message_count": 150,
+    "group_count": 5
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**Errors:**
+- `404 Not Found`: User not found
+
+---
+
+### DELETE /users/{user_id}
+
+Delete a user (hard delete).
+
+**Headers:** Requires Authorization (Admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| user_id | UUID | User ID to delete |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "success": true
+  },
+  "message": "User deleted",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**Errors:**
+- `400 Bad Request`: Cannot delete yourself
+- `404 Not Found`: User not found
+
+---
+
+### PATCH /users/{user_id}/role
+
+Update a user's role.
+
+**Headers:** Requires Authorization (Admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| user_id | UUID | User ID |
+
+**Request Body:**
+
+```json
+{
+  "role": "admin"
+}
+```
+
+| Field | Type | Required | Description |
+|-------|------|----------|-------------|
+| role | string | Yes | New role ("user" or "admin") |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "success": true
+  },
+  "message": "Role updated",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**Errors:**
+- `400 Bad Request`: Cannot change your own role
+- `404 Not Found`: User not found
+
+---
+
+### GET /users/online
+
+Get list of currently online users.
+
+**Headers:** Requires Authorization (Admin)
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "online_users": [
+      {
+        "user_id": "550e8400-e29b-41d4-a716-446655440000",
+        "username": "johndoe",
+        "first_name": "John",
+        "last_name": "Doe"
+      }
+    ],
+    "count": 42
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+---
+
+### GET /groups
+
+Get paginated list of all groups.
+
+**Headers:** Requires Authorization (Admin)
+
+**Query Parameters:**
+
+| Parameter | Type | Default | Description |
+|-----------|------|---------|-------------|
+| limit | integer | 50 | Groups per page |
+| offset | integer | 0 | Groups to skip |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "groups": [
+      {
+        "group_id": "770e8400-e29b-41d4-a716-446655440000",
+        "group_name": "Project Team",
+        "member_count": 5,
+        "created_at": "2024-01-15T10:30:00Z"
+      }
+    ],
+    "has_more": false
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+---
+
+### GET /groups/{group_id}
+
+Get detailed group information.
+
+**Headers:** Requires Authorization (Admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| group_id | UUID | Group ID |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "group_id": "770e8400-e29b-41d4-a716-446655440000",
+    "group_name": "Project Team",
+    "creator_id": "550e8400-e29b-41d4-a716-446655440000",
+    "creator_username": "johndoe",
+    "member_count": 5,
+    "message_count": 150,
+    "created_at": "2024-01-15T10:30:00Z",
+    "members": [
+      {
+        "user_id": "550e8400-e29b-41d4-a716-446655440000",
+        "username": "johndoe",
+        "role": "admin"
+      }
+    ]
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+---
+
+### DELETE /groups/{group_id}
+
+Delete a group (hard delete).
+
+**Headers:** Requires Authorization (Admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| group_id | UUID | Group ID to delete |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "success": true
+  },
+  "message": "Group deleted",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+---
+
+### POST /groups
+
+Create a new group as admin.
+
+**Headers:** Requires Authorization (Admin)
+
+**Request Body:**
+
+```json
+{
+  "group_name": "New Project",
+  "member_ids": [
+    "550e8400-e29b-41d4-a716-446655440001",
+    "550e8400-e29b-41d4-a716-446655440002"
+  ]
+}
+```
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "group_id": "770e8400-e29b-41d4-a716-446655440001",
+    "group_name": "New Project",
+    "member_count": 2
+  },
+  "message": "Group created",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+---
+
+### GET /tokens/reset
+
+Get active password reset tokens (for introspection).
+
+**Headers:** Requires Authorization (Admin)
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "tokens": [
+      {
+        "token_hash": "a1b2c3d4e5f6...",
+        "user_id": "550e8400-e29b-41d4-a716-446655440000",
+        "ttl_seconds": 2400
+      }
+    ],
+    "count": 1
+  },
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+---
+
+### DELETE /tokens/reset/{token_hash}
+
+Manually invalidate a password reset token.
+
+**Headers:** Requires Authorization (Admin)
+
+**Path Parameters:**
+
+| Parameter | Type | Description |
+|-----------|------|-------------|
+| token_hash | string | SHA-256 hash of the token |
+
+**Response (200 OK):**
+
+```json
+{
+  "success": true,
+  "data": {
+    "success": true
+  },
+  "message": "Token invalidated",
+  "timestamp": "2024-01-15T10:30:00Z"
+}
+```
+
+**Errors:**
+- `404 Not Found`: Token not found or already expired
 
 ---
 

@@ -340,9 +340,12 @@ class GroupMessageService(BaseService):
     async def get_group_message(self, message_id: str) -> Optional[dict]:
         """Get a group message by ID."""
         query = """
-            SELECT message_id::text AS message_id, group_id::text AS group_id, 
-                   sender_id::text AS sender_id, content, message_type, created_at
-            FROM group_messages WHERE message_id = $1::uuid
+            SELECT gm.message_id::text AS message_id, gm.group_id::text AS group_id, 
+                   gm.sender_id::text AS sender_id, gm.content, gm.message_type, 
+                   gm.created_at, u.username as sender_username
+            FROM group_messages gm
+            JOIN users u ON gm.sender_id = u.id
+            WHERE gm.message_id = $1::uuid
         """
         row = await self.db.fetchrow(query, message_id)
         return dict(row) if row else None

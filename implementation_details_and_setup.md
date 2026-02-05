@@ -1,6 +1,6 @@
 # Implementation Details
 
-This document covers the architectural decisions, design patterns, and technical rationale behind this project (server) implementation.
+This document covers the architectural decisions, design patterns, and technical rationale behind this project (server) implementation. Have a great read
 
 ---
 
@@ -8,15 +8,18 @@ This document covers the architectural decisions, design patterns, and technical
 
 1. [Setup Instructions](#setup-instructions)
 2. [Architecture Overview](#architecture-overview)
-2. [Authentication and Authorization](#authentication-and-authorization)
-3. [WebSocket Design](#websocket-design)
-4. [Database Layer](#database-layer)
-5. [Caching Strategy](#caching-strategy)
-6. [Response Standardization](#response-standardization)
-7. [Serialization](#serialization)
-8. [Error Handling](#error-handling)
-9. [Message Routing](#message-routing)
-10. [Offline Message Delivery](#offline-message-delivery)
+3. [Authentication and Authorization](#authentication-and-authorization)
+4. [WebSocket Design](#websocket-design)
+5. [Database Layer](#database-layer)
+6. [Caching Strategy](#caching-strategy)
+7. [Response Standardization](#response-standardization)
+8. [Serialization](#serialization)
+9. [Error Handling](#error-handling)
+10. [Message Routing](#message-routing)
+11. [Offline Message Delivery](#offline-message-delivery)
+12. [Admin Panel](#admin-panel)
+13. [Password Reset Flow](#password-reset-flow)
+14. [Design Decisions & Caveats](#design-decisions--caveats)
 
 ---
 
@@ -50,6 +53,19 @@ This document covers the architectural decisions, design patterns, and technical
    REDIS_DB=0
 
    JWT_SECRET=your_jwt_secret_min_32_characters
+   
+   # Email configuration (optional - for password reset)
+   MAIL_USERNAME=your_email@gmail.com
+   MAIL_PASSWORD=your_app_password
+   MAIL_FROM=your_email@gmail.com
+   MAIL_PORT=587
+   MAIL_SERVER=smtp.gmail.com
+   MAIL_STARTTLS=True
+   MAIL_SSL_TLS=False
+   
+   # Application URLs
+   APP_BASE_URL=http://localhost:8500
+   CLIENT_BASE_URL=http://localhost:3005
    ```
 
 3. For Redis ACL (if using authentication):
@@ -456,3 +472,181 @@ The layered architecture facilitates testing:
 - WebSocket handlers can be tested with mock WebSocket objects
 
 Database queries use explicit column selection rather than `SELECT *`, making schema changes more predictable in terms of test impact.
+
+---
+
+## Admin Panel
+
+### Role-Based Access Control
+
+The application implements role-based access control with a `role` field in the users table:
+
+```sql
+role VARCHAR(20) DEFAULT 'user'
+```
+
+Roles:
+- `user`: Standard user with messaging capabilities
+- `admin`: Full administrative access
+
+### Admin Guard
+
+Admin endpoints are protected using a FastAPI dependency:
+
+```python
+async def require_admin(auth: VerifiedTokenData = Depends(verify_jwt)) -> VerifiedTokenData:
+    if auth.role != 'admin':
+        raise HTTPException(status_code=403, detail="Admin access required")
+    return auth
+```
+
+This pattern ensures consistent authorization across all admin endpoints without repetitive code.
+
+### Admin Capabilities
+
+1. **User Management**
+   - View all users with pagination and search
+   - View detailed user info (message count, group count)
+   - Delete users
+   - Promote/demote user roles
+
+2. **Group Management**
+   - View all groups
+   - Create groups with any members
+   - Delete groups
+   - View group details with member list
+
+3. **Online User Monitoring**
+   - View currently connected users
+   - Connection statistics
+
+4. **Token Introspection**
+   - View active password reset tokens
+   - Manually invalidate tokens
+   - Monitor TTL and expiration
+
+---
+
+## Password Reset Flow
+
+### Security Architecture
+
+Password reset uses Redis-backed tokens rather than JWT-only approach:
+
+```
+User Request → Generate Token → Store in Redis (TTL 1hr) → Send Email
+                                      ↓
+User Clicks Link → Validate Token (Redis) → Update Password → Invalidate Token
+```
+
+**Why Redis over JWT-only:**
+- **Replay Protection**: Tokens are invalidated after use
+- **Revocation**: Admins can manually invalidate tokens
+- **Introspection**: Ability to view active tokens for monitoring
+- **Single Use**: Guaranteed one-time use, preventing token sharing
+
+### Token Storage
+
+```python
+class TokenCacheService:
+    async def store_reset_token(self, token: str, user_id: str) -> None:
+        token_hash = hashlib.sha256(token.encode()).hexdigest()
+        key = f"pwd_reset:{token_hash}"
+        await self.redis.setex(key, 3600, user_id)  # 1 hour TTL
+```
+
+Tokens are hashed before storage to prevent exposure if Redis is compromised.
+
+### Email Templates
+
+Email templates are stored in `app/templates/` and loaded at runtime:
+
+```
+app/templates/
+└── password_reset.html
+```
+
+This separation allows template customization without code changes.
+
+---
+
+## Design Decisions & Caveats
+
+### Why No ORM (SQLAlchemy/Tortoise)
+
+This project uses raw SQL with `asyncpg` instead of an ORM. Rationale:
+
+1. **Performance**: Direct asyncpg queries have lower overhead than ORM abstraction
+2. **Transparency**: SQL is explicit; no "magic" query generation
+3. **Assessment Scope**: For a test/assessment project, ORM adds complexity without proportional benefit
+4. **Learning Value**: Demonstrates understanding of SQL rather than ORM API
+
+**Consequence**: The `app/models/` directory is sparse, containing only Pydantic validation models rather than ORM entities. This is intentional.
+
+### Hard Delete vs Soft Delete
+
+User and group deletion performs **hard delete** (permanent removal):
+
+```sql
+DELETE FROM users WHERE user_id = $1
+```
+
+**Why not soft delete:**
+- This is a test/assessment project, not production
+- Simplifies implementation and queries
+- No regulatory requirements for data retention
+- Demonstrates the functionality without added complexity
+
+**Production Recommendation**: Implement soft delete with `deleted_at` timestamp and filter queries accordingly.
+
+### Request/Response Models in Views
+
+Pydantic request models (e.g., `LoginRequest`, `UpdateRoleRequest`) are placed in `app/views/` alongside response dataclasses:
+
+```
+app/views/
+├── auth.py      # SignupRequest, LoginRequest, TokenResponse...
+├── admin.py     # UpdateRoleRequest, CreateGroupRequest...
+├── messaging.py # MessageData, GroupData...
+└── responses.py # APIResponse, ErrorResponse...
+```
+
+**Rationale**: Views define the API contract (both input and output). This differs from frameworks where "views" are templates, but aligns with the REST interpretation where views represent data serialization.
+
+### Single-Process Architecture
+
+The application runs as a single process with in-memory WebSocket connection tracking:
+
+```python
+active_connections: Dict[str, Set[WebSocket]]
+```
+
+**Limitation**: Does not support horizontal scaling without additional infrastructure (Redis Pub/Sub for cross-node messaging).
+
+**Why acceptable**: For assessment purposes, single-process demonstrates all concepts. Horizontal scaling would require:
+- Redis Pub/Sub for WebSocket message routing
+- Sticky sessions or connection state externalization
+- Load balancer with WebSocket support
+
+### No Message Encryption
+
+Messages are stored in plaintext in PostgreSQL:
+
+```sql
+content TEXT NOT NULL
+```
+
+**Why**: End-to-end encryption adds significant complexity (key exchange, client-side encryption) beyond assessment scope.
+
+**Production Recommendation**: Implement E2E encryption with client-managed keys.
+
+### Test Users in Seed Data
+
+Development mode seeds test users with known passwords:
+
+```python
+# Admin: admin / admin123
+# Users: alice, bob, charlie, diana / password123
+```
+
+**Security Note**: DEV_MODE should not be enabled in production. The seed function checks `DEV_MODE` environment variable before inserting test data.

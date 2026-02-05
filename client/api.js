@@ -188,5 +188,87 @@ const API = {
     // User lookup
     async lookupUser(username) {
         return this.request(`/api/v1/auth/users/lookup/${encodeURIComponent(username)}`);
+    },
+
+    // Password reset
+    async requestPasswordReset(email) {
+        return this.request('/api/v1/auth/password/reset-request', {
+            method: 'POST',
+            body: JSON.stringify({ email })
+        });
+    },
+
+    async resetPassword(token, newPassword) {
+        return this.request('/api/v1/auth/password/reset', {
+            method: 'POST',
+            body: JSON.stringify({ token, new_password: newPassword })
+        });
+    },
+
+    // Admin endpoints
+    async getAdminStats() {
+        return this.request('/api/v1/admin/stats');
+    },
+
+    async getAdminUsers(limit = 50, offset = 0, search = '') {
+        let url = `/api/v1/admin/users?limit=${limit}&offset=${offset}`;
+        if (search) url += `&search=${encodeURIComponent(search)}`;
+        return this.request(url);
+    },
+
+    async getAdminUserDetail(userId) {
+        return this.request(`/api/v1/admin/users/${userId}`);
+    },
+
+    async deleteAdminUser(userId) {
+        return this.request(`/api/v1/admin/users/${userId}`, {
+            method: 'DELETE'
+        });
+    },
+
+    async updateUserRole(userId, role) {
+        return this.request(`/api/v1/admin/users/${userId}/role`, {
+            method: 'PATCH',
+            body: JSON.stringify({ role })
+        });
+    },
+
+    async getOnlineUsers() {
+        return this.request('/api/v1/admin/users/online');
+    },
+
+    async getAdminGroups(limit = 50, offset = 0) {
+        return this.request(`/api/v1/admin/groups?limit=${limit}&offset=${offset}`);
+    },
+
+    async getAdminGroupDetail(groupId) {
+        return this.request(`/api/v1/admin/groups/${groupId}`);
+    },
+
+    async deleteAdminGroup(groupId) {
+        return this.request(`/api/v1/admin/groups/${groupId}`, {
+            method: 'DELETE'
+        });
+    },
+
+    async createAdminGroup(groupName, memberIds) {
+        return this.request('/api/v1/admin/groups', {
+            method: 'POST',
+            body: JSON.stringify({
+                group_name: groupName,
+                member_ids: memberIds
+            })
+        });
+    },
+
+    // Token introspection
+    async getResetTokens() {
+        return this.request('/api/v1/admin/tokens/reset');
+    },
+
+    async invalidateResetToken(tokenHash) {
+        return this.request(`/api/v1/admin/tokens/reset/${tokenHash}`, {
+            method: 'DELETE'
+        });
     }
 };

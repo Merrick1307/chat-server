@@ -23,3 +23,4 @@ class User(BaseModelSchema):
     password: str
     first_name: str
     last_name: str
+    role: str = "user"

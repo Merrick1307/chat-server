@@ -135,11 +135,14 @@ class WebSocketHandler:
         message_id = str(uuid4())
         timestamp = datetime.now(timezone.utc).isoformat()
         
+        sender_username = await self.message_service.get_username_by_id(sender_id)
+        
         outgoing_message = {
             "type": self.MSG_GROUP_NEW,
             "message_id": message_id,
             "group_id": group_id,
             "sender_id": sender_id,
+            "sender_username": sender_username,
             "content": content,
             "message_type": message_type,
             "created_at": timestamp

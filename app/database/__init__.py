@@ -82,15 +82,19 @@ async def lifespan(app: FastAPI):
         logger.error(f"Migration failed: {e}")
         raise
 
-    app.state.db_pool = await asyncpg.create_pool(
+    db_pool = await asyncpg.create_pool(
         db_connection_string,
         min_size=15, max_size=30,
     )
 
-    async with app.state.db_pool.acquire() as conn:
+    # Seed using the pool variable directly
+    async with db_pool.acquire() as conn:
         seed_result = await seed_dev_users(conn)
         if not seed_result.get("skipped"):
             logger.info(f"Dev seeding: {seed_result}")
+
+    # Then assign to app.state
+    app.state.db_pool = db_pool
 
     if REDIS_USER and REDIS_PASSWORD:
         REDIS_URL = f"redis://{REDIS_USER}:{REDIS_PASSWORD}@{REDIS_HOST}:{REDIS_PORT}/{REDIS_DB}"
@@ -112,9 +116,9 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    print("Shutting down server...")
+    logger.info("Shutting down server...")
 
     await app.state.redis.aclose()
     await app.state.db_pool.close()
 
-    print("HEX IAM shutdown complete")
+    logger.info("Chat server shutdown complete")

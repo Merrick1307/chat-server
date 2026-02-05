@@ -13,7 +13,7 @@ logger = logging.getLogger(__name__)
 
 VerifiedTokenData = namedtuple(
     "VerifiedTokenData",
-    ["user_id", "email", "username", "exp", "iat"]
+    ["user_id", "email", "role", "username", "exp", "iat"]
 )
 
 
@@ -67,6 +67,7 @@ class VerifyToken:
             user_id: Optional[str] = payload.get("user_id")
             email: Optional[str] = payload.get("sub")
             username: Optional[str] = payload.get("username") or payload.get("sub")
+            role: Optional[str] = payload.get("role")
             exp = payload.get("exp")
             iat = payload.get("iat")
 
@@ -86,6 +87,7 @@ class VerifyToken:
             return VerifiedTokenData(
                 user_id=user_id,
                 email=email,
+                role=role,
                 username=username,
                 exp=exp,
                 iat=iat

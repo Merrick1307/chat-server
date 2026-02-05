@@ -5,10 +5,29 @@ const App = {
     conversations: new Map(),
     groups: new Map(),
     typingTimeout: null,
+    isAdmin: false,
+    adminUsersPage: 0,
+    adminGroupsPage: 0,
+    pendingDelete: null,
 
     init() {
         this.bindEvents();
+        this.bindAdminEvents();
+        this.bindPasswordResetEvents();
         this.checkAuth();
+    },
+
+    decodeJwt(token) {
+        try {
+            const base64Url = token.split('.')[1];
+            const base64 = base64Url.replace(/-/g, '+').replace(/_/g, '/');
+            const jsonPayload = decodeURIComponent(atob(base64).split('').map(c => 
+                '%' + ('00' + c.charCodeAt(0).toString(16)).slice(-2)
+            ).join(''));
+            return JSON.parse(jsonPayload);
+        } catch (e) {
+            return null;
+        }
     },
 
     bindEvents() {
@@ -41,16 +60,111 @@ const App = {
         ws.on('readReceipt', (msg) => this.onReadReceipt(msg));
     },
 
+    bindPasswordResetEvents() {
+        document.getElementById('forgot-password-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('login-form').classList.remove('active');
+            document.getElementById('forgot-password-form').classList.add('active');
+        });
+
+        document.getElementById('back-to-login-link').addEventListener('click', (e) => {
+            e.preventDefault();
+            document.getElementById('forgot-password-form').classList.remove('active');
+            document.getElementById('login-form').classList.add('active');
+        });
+
+        document.getElementById('forgot-password-form').addEventListener('submit', async (e) => {
+            e.preventDefault();
+            const email = document.getElementById('forgot-email').value;
+            const errorEl = document.getElementById('forgot-error');
+            const successEl = document.getElementById('forgot-success');
+
+            try {
+                errorEl.textContent = '';
+                successEl.classList.add('hidden');
+                await API.requestPasswordReset(email);
+                successEl.textContent = 'If an account exists with this email, a reset link has been sent.';
+                successEl.classList.remove('hidden');
+            } catch (error) {
+                errorEl.textContent = error.message;
+            }
+        });
+    },
+
+    bindAdminEvents() {
+        document.getElementById('admin-logout-btn')?.addEventListener('click', () => this.handleLogout());
+
+        document.querySelectorAll('.admin-nav-btn').forEach(btn => {
+            btn.addEventListener('click', (e) => this.switchAdminView(e.target.dataset.view));
+        });
+
+        document.getElementById('user-search')?.addEventListener('input', 
+            this.debounce(() => this.loadAdminUsers(), 300)
+        );
+
+        document.getElementById('users-prev-btn')?.addEventListener('click', () => {
+            if (this.adminUsersPage > 0) {
+                this.adminUsersPage--;
+                this.loadAdminUsers();
+            }
+        });
+
+        document.getElementById('users-next-btn')?.addEventListener('click', () => {
+            this.adminUsersPage++;
+            this.loadAdminUsers();
+        });
+
+        document.getElementById('groups-prev-btn')?.addEventListener('click', () => {
+            if (this.adminGroupsPage > 0) {
+                this.adminGroupsPage--;
+                this.loadAdminGroups();
+            }
+        });
+
+        document.getElementById('groups-next-btn')?.addEventListener('click', () => {
+            this.adminGroupsPage++;
+            this.loadAdminGroups();
+        });
+
+        document.getElementById('refresh-online-btn')?.addEventListener('click', () => this.loadOnlineUsers());
+        document.getElementById('refresh-tokens-btn')?.addEventListener('click', () => this.loadResetTokens());
+
+        document.getElementById('admin-create-group-btn')?.addEventListener('click', () => 
+            this.showModal('admin-create-group-modal')
+        );
+
+        document.getElementById('admin-create-group-submit')?.addEventListener('click', () => 
+            this.createAdminGroup()
+        );
+
+        document.getElementById('confirm-delete-btn')?.addEventListener('click', () => this.confirmDelete());
+    },
+
+    debounce(func, wait) {
+        let timeout;
+        return (...args) => {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), wait);
+        };
+    },
+
     checkAuth() {
         const token = API.getToken();
         const userData = localStorage.getItem('user_data');
 
         if (token && userData) {
             this.currentUser = JSON.parse(userData);
-            this.showChatScreen();
-            ws.connect();
-            this.loadConversations();
-            this.loadGroups();
+            const payload = this.decodeJwt(token);
+            this.isAdmin = payload?.role === 'admin';
+
+            if (this.isAdmin) {
+                this.showAdminScreen();
+            } else {
+                this.showChatScreen();
+                ws.connect();
+                this.loadConversations();
+                this.loadGroups();
+            }
         } else {
             this.showAuthScreen();
         }
@@ -77,16 +191,24 @@ const App = {
             API.setToken(data.access_token);
             API.setRefreshToken(data.refresh_token);
 
+            const payload = this.decodeJwt(data.access_token);
+            this.isAdmin = payload?.role === 'admin';
+
             this.currentUser = {
                 user_id: data.user_id,
-                username: username
+                username: username,
+                role: payload?.role || 'user'
             };
             localStorage.setItem('user_data', JSON.stringify(this.currentUser));
 
-            this.showChatScreen();
-            ws.connect();
-            this.loadConversations();
-            this.loadGroups();
+            if (this.isAdmin) {
+                this.showAdminScreen();
+            } else {
+                this.showChatScreen();
+                ws.connect();
+                this.loadConversations();
+                this.loadGroups();
+            }
         } catch (error) {
             errorEl.textContent = error.message;
         }
@@ -366,7 +488,8 @@ const App = {
         
         let senderHtml = '';
         if (this.currentChatType === 'group' && !isSent) {
-            senderHtml = `<div class="sender">${msg.sender_id}</div>`;
+            const senderName = msg.sender_username || msg.sender_id;
+            senderHtml = `<div class="sender">${this.escapeHtml(senderName)}</div>`;
         }
         
         div.innerHTML = `
@@ -552,6 +675,353 @@ const App = {
         const div = document.createElement('div');
         div.textContent = text;
         return div.innerHTML;
+    },
+
+    showAdminScreen() {
+        document.querySelectorAll('.screen').forEach(s => s.classList.remove('active'));
+        document.getElementById('admin-screen').classList.add('active');
+        this.loadAdminDashboard();
+    },
+
+    switchAdminView(view) {
+        document.querySelectorAll('.admin-nav-btn').forEach(btn => {
+            btn.classList.toggle('active', btn.dataset.view === view);
+        });
+        document.querySelectorAll('.admin-view').forEach(v => {
+            v.classList.toggle('active', v.id === `admin-${view}`);
+        });
+
+        if (view === 'dashboard') this.loadAdminDashboard();
+        else if (view === 'users') this.loadAdminUsers();
+        else if (view === 'groups') this.loadAdminGroups();
+        else if (view === 'online') this.loadOnlineUsers();
+        else if (view === 'tokens') this.loadResetTokens();
+    },
+
+    async loadAdminDashboard() {
+        try {
+            const stats = await API.getAdminStats();
+            document.getElementById('stat-users').textContent = stats.total_users || 0;
+            document.getElementById('stat-groups').textContent = stats.total_groups || 0;
+            document.getElementById('stat-messages').textContent = stats.total_direct_messages || 0;
+            document.getElementById('stat-group-messages').textContent = stats.total_group_messages || 0;
+            document.getElementById('stat-online').textContent = stats.online_users || 0;
+            document.getElementById('stat-connections').textContent = stats.active_connections || 0;
+        } catch (error) {
+            console.error('Failed to load stats:', error);
+        }
+    },
+
+    async loadAdminUsers() {
+        try {
+            const search = document.getElementById('user-search')?.value || '';
+            const limit = 20;
+            const offset = this.adminUsersPage * limit;
+            const data = await API.getAdminUsers(limit, offset, search);
+            
+            const tbody = document.getElementById('users-table-body');
+            tbody.innerHTML = data.users.map(user => `
+                <tr>
+                    <td>${this.escapeHtml(user.username)}</td>
+                    <td>${this.escapeHtml(user.email)}</td>
+                    <td>${this.escapeHtml(user.first_name)} ${this.escapeHtml(user.last_name)}</td>
+                    <td><span class="role-badge ${user.role}">${user.role}</span></td>
+                    <td>${new Date(user.created_at).toLocaleDateString()}</td>
+                    <td class="actions">
+                        <button class="btn-sm btn-view" onclick="App.viewUserDetail('${user.id}')">View</button>
+                        <button class="btn-sm btn-role" onclick="App.toggleUserRole('${user.id}', '${user.role}')">
+                            ${user.role === 'admin' ? 'Demote' : 'Promote'}
+                        </button>
+                        <button class="btn-sm btn-delete" onclick="App.promptDeleteUser('${user.id}', '${this.escapeHtml(user.username)}')">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            document.getElementById('users-page-info').textContent = `Page ${this.adminUsersPage + 1}`;
+            document.getElementById('users-prev-btn').disabled = this.adminUsersPage === 0;
+            document.getElementById('users-next-btn').disabled = !data.has_more;
+        } catch (error) {
+            console.error('Failed to load users:', error);
+        }
+    },
+
+    async viewUserDetail(userId) {
+        try {
+            const user = await API.getAdminUserDetail(userId);
+            const content = document.getElementById('user-detail-content');
+            content.innerHTML = `
+                <div class="user-detail-grid">
+                    <div class="detail-item">
+                        <span class="detail-label">Username</span>
+                        <span class="detail-value">${this.escapeHtml(user.username)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Email</span>
+                        <span class="detail-value">${this.escapeHtml(user.email)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Name</span>
+                        <span class="detail-value">${this.escapeHtml(user.first_name)} ${this.escapeHtml(user.last_name)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Role</span>
+                        <span class="detail-value">${user.role}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Messages Sent</span>
+                        <span class="detail-value">${user.message_count}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Groups</span>
+                        <span class="detail-value">${user.group_count}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Created</span>
+                        <span class="detail-value">${new Date(user.created_at).toLocaleString()}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Updated</span>
+                        <span class="detail-value">${user.updated_at ? new Date(user.updated_at).toLocaleString() : 'Never'}</span>
+                    </div>
+                </div>
+            `;
+            this.showModal('user-detail-modal');
+        } catch (error) {
+            alert('Failed to load user details: ' + error.message);
+        }
+    },
+
+    async toggleUserRole(userId, currentRole) {
+        const newRole = currentRole === 'admin' ? 'user' : 'admin';
+        if (!confirm(`Change user role to ${newRole}?`)) return;
+
+        try {
+            await API.updateUserRole(userId, newRole);
+            this.loadAdminUsers();
+        } catch (error) {
+            alert('Failed to update role: ' + error.message);
+        }
+    },
+
+    promptDeleteUser(userId, username) {
+        this.pendingDelete = { type: 'user', id: userId };
+        document.getElementById('confirm-delete-message').textContent = 
+            `Are you sure you want to delete user "${username}"? This action cannot be undone.`;
+        this.showModal('confirm-delete-modal');
+    },
+
+    promptDeleteGroup(groupId, groupName) {
+        this.pendingDelete = { type: 'group', id: groupId };
+        document.getElementById('confirm-delete-message').textContent = 
+            `Are you sure you want to delete group "${groupName}"? All messages will be lost.`;
+        this.showModal('confirm-delete-modal');
+    },
+
+    async confirmDelete() {
+        if (!this.pendingDelete) return;
+
+        try {
+            if (this.pendingDelete.type === 'user') {
+                await API.deleteAdminUser(this.pendingDelete.id);
+                this.loadAdminUsers();
+            } else if (this.pendingDelete.type === 'group') {
+                await API.deleteAdminGroup(this.pendingDelete.id);
+                this.loadAdminGroups();
+            }
+            document.getElementById('confirm-delete-modal').classList.add('hidden');
+            this.pendingDelete = null;
+        } catch (error) {
+            alert('Delete failed: ' + error.message);
+        }
+    },
+
+    async loadAdminGroups() {
+        try {
+            const limit = 20;
+            const offset = this.adminGroupsPage * limit;
+            const data = await API.getAdminGroups(limit, offset);
+            
+            const tbody = document.getElementById('groups-table-body');
+            tbody.innerHTML = data.groups.map(group => `
+                <tr>
+                    <td>${this.escapeHtml(group.group_name)}</td>
+                    <td>${group.member_count}</td>
+                    <td>${new Date(group.created_at).toLocaleDateString()}</td>
+                    <td class="actions">
+                        <button class="btn-sm btn-view" onclick="App.viewGroupDetail('${group.group_id}')">View</button>
+                        <button class="btn-sm btn-delete" onclick="App.promptDeleteGroup('${group.group_id}', '${this.escapeHtml(group.group_name)}')">Delete</button>
+                    </td>
+                </tr>
+            `).join('');
+
+            document.getElementById('groups-page-info').textContent = `Page ${this.adminGroupsPage + 1}`;
+            document.getElementById('groups-prev-btn').disabled = this.adminGroupsPage === 0;
+            document.getElementById('groups-next-btn').disabled = !data.has_more;
+        } catch (error) {
+            console.error('Failed to load groups:', error);
+        }
+    },
+
+    async viewGroupDetail(groupId) {
+        try {
+            const group = await API.getAdminGroupDetail(groupId);
+            const content = document.getElementById('user-detail-content');
+            content.innerHTML = `
+                <div class="user-detail-grid">
+                    <div class="detail-item">
+                        <span class="detail-label">Group Name</span>
+                        <span class="detail-value">${this.escapeHtml(group.group_name)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Created By</span>
+                        <span class="detail-value">${this.escapeHtml(group.creator_username)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Members</span>
+                        <span class="detail-value">${group.member_count}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Messages</span>
+                        <span class="detail-value">${group.message_count}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Created</span>
+                        <span class="detail-value">${new Date(group.created_at).toLocaleString()}</span>
+                    </div>
+                </div>
+                <h3 style="margin-top: 1rem;">Members</h3>
+                <ul style="list-style: none; padding: 0;">
+                    ${group.members.map(m => `
+                        <li style="padding: 0.5rem; background: var(--bg-primary); margin: 0.25rem 0; border-radius: 4px;">
+                            ${this.escapeHtml(m.username)} (${m.role})
+                        </li>
+                    `).join('')}
+                </ul>
+            `;
+            this.showModal('user-detail-modal');
+        } catch (error) {
+            alert('Failed to load group details: ' + error.message);
+        }
+    },
+
+    async loadOnlineUsers() {
+        try {
+            const data = await API.getOnlineUsers();
+            const container = document.getElementById('online-users-list');
+            
+            if (data.online_users.length === 0) {
+                container.innerHTML = '<p>No users currently online.</p>';
+                return;
+            }
+
+            container.innerHTML = data.online_users.map(user => `
+                <div class="online-user-card">
+                    <span class="online-indicator"></span>
+                    <div>
+                        <strong>${this.escapeHtml(user.username)}</strong>
+                        <div style="font-size: 0.85rem; color: var(--text-secondary);">
+                            ${this.escapeHtml(user.first_name)} ${this.escapeHtml(user.last_name)}
+                        </div>
+                    </div>
+                </div>
+            `).join('');
+        } catch (error) {
+            console.error('Failed to load online users:', error);
+        }
+    },
+
+    async createAdminGroup() {
+        const name = document.getElementById('admin-group-name').value.trim();
+        const membersInput = document.getElementById('admin-group-members').value.trim();
+        const errorEl = document.getElementById('admin-group-error');
+
+        if (!name) {
+            errorEl.textContent = 'Group name is required';
+            errorEl.classList.remove('hidden');
+            return;
+        }
+
+        try {
+            errorEl.classList.add('hidden');
+            const memberIds = [];
+            
+            if (membersInput) {
+                const usernames = membersInput.split(',').map(u => u.trim()).filter(u => u);
+                for (const username of usernames) {
+                    const user = await API.lookupUser(username);
+                    if (user) memberIds.push(user.user_id);
+                }
+            }
+
+            await API.createAdminGroup(name, memberIds);
+            document.getElementById('admin-create-group-modal').classList.add('hidden');
+            document.getElementById('admin-group-name').value = '';
+            document.getElementById('admin-group-members').value = '';
+            this.loadAdminGroups();
+        } catch (error) {
+            errorEl.textContent = error.message;
+            errorEl.classList.remove('hidden');
+        }
+    },
+
+    async loadResetTokens() {
+        try {
+            const data = await API.getResetTokens();
+            const tbody = document.getElementById('tokens-table-body');
+            const noTokensMsg = document.getElementById('no-tokens-msg');
+            
+            if (data.tokens.length === 0) {
+                tbody.innerHTML = '';
+                noTokensMsg.classList.remove('hidden');
+                return;
+            }
+            
+            noTokensMsg.classList.add('hidden');
+            tbody.innerHTML = data.tokens.map(token => {
+                const ttlClass = token.ttl_seconds > 1800 ? 'ttl-high' : 
+                                 token.ttl_seconds > 600 ? 'ttl-medium' : 'ttl-low';
+                const ttlDisplay = this.formatTTL(token.ttl_seconds);
+                const expiresAt = new Date(Date.now() + token.ttl_seconds * 1000).toLocaleString();
+                
+                return `
+                    <tr>
+                        <td><code>${token.token_hash.substring(0, 16)}...</code></td>
+                        <td><code>${token.user_id.substring(0, 8)}...</code></td>
+                        <td>
+                            <span class="ttl-badge ${ttlClass}">${ttlDisplay}</span>
+                            <br><small>Expires: ${expiresAt}</small>
+                        </td>
+                        <td class="actions">
+                            <button class="btn-sm btn-delete" onclick="App.invalidateToken('${token.token_hash}')">Invalidate</button>
+                        </td>
+                    </tr>
+                `;
+            }).join('');
+        } catch (error) {
+            console.error('Failed to load reset tokens:', error);
+        }
+    },
+
+    formatTTL(seconds) {
+        if (seconds >= 3600) {
+            const hours = Math.floor(seconds / 3600);
+            const mins = Math.floor((seconds % 3600) / 60);
+            return `${hours}h ${mins}m`;
+        } else if (seconds >= 60) {
+            return `${Math.floor(seconds / 60)}m ${seconds % 60}s`;
+        }
+        return `${seconds}s`;
+    },
+
+    async invalidateToken(tokenHash) {
+        if (!confirm('Invalidate this reset token? The user will need to request a new one.')) return;
+        
+        try {
+            await API.invalidateResetToken(tokenHash);
+            this.loadResetTokens();
+        } catch (error) {
+            alert('Failed to invalidate token: ' + error.message);
+        }
     }
 };
 

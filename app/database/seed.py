@@ -10,6 +10,9 @@ from uuid import uuid4
 
 import bcrypt
 from asyncpg import Connection
+from dotenv import load_dotenv
+
+load_dotenv()
 
 logger = logging.getLogger(__name__)
 
@@ -20,6 +23,7 @@ DEV_USERS = [
         "password": "password123",
         "first_name": "Alice",
         "last_name": "Johnson",
+        "role": "user"
     },
     {
         "username": "bob",
@@ -27,6 +31,7 @@ DEV_USERS = [
         "password": "password123",
         "first_name": "Bob",
         "last_name": "Smith",
+        "role": "user"
     },
     {
         "username": "charlie",
@@ -34,6 +39,7 @@ DEV_USERS = [
         "password": "password123",
         "first_name": "Charlie",
         "last_name": "Brown",
+        "role": "user"
     },
     {
         "username": "diana",
@@ -41,13 +47,15 @@ DEV_USERS = [
         "password": "password123",
         "first_name": "Diana",
         "last_name": "Prince",
+        "role": "user"
     },
     {
-        "username": "evan",
-        "email": "evan@example.com",
-        "password": "password123",
-        "first_name": "Evan",
-        "last_name": "Williams",
+        "username": "admin",
+        "email": "admin@example.com",
+        "password": "admin123",
+        "first_name": "Admin",
+        "last_name": "User",
+        "role": "admin"
     },
 ]
 
@@ -90,15 +98,16 @@ async def seed_dev_users(db: Connection) -> dict:
         
         await db.execute(
             """
-            INSERT INTO users (id, username, email, password, first_name, last_name)
-            VALUES ($1, $2, $3, $4, $5, $6)
+            INSERT INTO users (id, username, email, password, first_name, last_name, role)
+            VALUES ($1, $2, $3, $4, $5, $6, $7)
             """,
             user_id,
             user_data["username"],
             user_data["email"],
             hashed_password,
             user_data["first_name"],
-            user_data["last_name"]
+            user_data["last_name"],
+            user_data["role"]
         )
         created.append(user_data["username"])
         logger.info(f"Created dev user: {user_data['username']}")

@@ -7,6 +7,7 @@ from app.utils.logs.middleware import LoggingMiddleware
 from app.controllers.auth import router as auth_router
 from app.controllers.messaging import router as message_router, group_router
 from app.controllers.websocket import router as websocket_router
+from app.controllers.admin import router as admin_router
 from app.views.responses import OrjsonResponse
 
 app: FastAPI = FastAPI(lifespan=lifespan, default_response_class=OrjsonResponse)
@@ -15,6 +16,7 @@ app.include_router(auth_router)
 app.include_router(message_router)
 app.include_router(group_router)
 app.include_router(websocket_router)
+app.include_router(admin_router)
 
 app.add_middleware(
     CORSMiddleware,

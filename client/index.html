@@ -22,6 +22,16 @@
                     <input type="password" id="login-password" placeholder="Password" required>
                     <button type="submit">Login</button>
                     <p id="login-error" class="error"></p>
+                    <a href="#" id="forgot-password-link" class="forgot-link">Forgot password?</a>
+                </form>
+                
+                <form id="forgot-password-form" class="auth-form">
+                    <p class="form-info">Enter your email address and we'll send you a link to reset your password.</p>
+                    <input type="email" id="forgot-email" placeholder="Email address" required>
+                    <button type="submit">Send Reset Link</button>
+                    <p id="forgot-error" class="error"></p>
+                    <p id="forgot-success" class="success hidden"></p>
+                    <a href="#" id="back-to-login-link" class="back-link">Back to login</a>
                 </form>
                 
                 <form id="signup-form" class="auth-form">
@@ -104,6 +114,174 @@
                 <input type="text" id="new-group-members" placeholder="Usernames (comma separated)">
                 <div class="modal-actions">
                     <button id="create-group-btn">Create</button>
+                    <button class="cancel-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Screen -->
+        <div id="admin-screen" class="screen">
+            <aside id="admin-sidebar">
+                <div class="sidebar-header">
+                    <span id="admin-user">Admin Panel</span>
+                    <button id="admin-logout-btn" title="Logout">Exit</button>
+                </div>
+                
+                <div class="admin-nav">
+                    <button class="admin-nav-btn active" data-view="dashboard">Dashboard</button>
+                    <button class="admin-nav-btn" data-view="users">Users</button>
+                    <button class="admin-nav-btn" data-view="groups">Groups</button>
+                    <button class="admin-nav-btn" data-view="online">Online Users</button>
+                    <button class="admin-nav-btn" data-view="tokens">Reset Tokens</button>
+                </div>
+            </aside>
+            
+            <main id="admin-content">
+                <!-- Dashboard View -->
+                <div id="admin-dashboard" class="admin-view active">
+                    <h2>System Statistics</h2>
+                    <div class="stats-grid">
+                        <div class="stat-card">
+                            <span class="stat-value" id="stat-users">0</span>
+                            <span class="stat-label">Total Users</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="stat-groups">0</span>
+                            <span class="stat-label">Total Groups</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="stat-messages">0</span>
+                            <span class="stat-label">Direct Messages</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="stat-group-messages">0</span>
+                            <span class="stat-label">Group Messages</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="stat-online">0</span>
+                            <span class="stat-label">Online Users</span>
+                        </div>
+                        <div class="stat-card">
+                            <span class="stat-value" id="stat-connections">0</span>
+                            <span class="stat-label">Active Connections</span>
+                        </div>
+                    </div>
+                </div>
+                
+                <!-- Users View -->
+                <div id="admin-users" class="admin-view">
+                    <div class="admin-header">
+                        <h2>User Management</h2>
+                        <input type="text" id="user-search" placeholder="Search users...">
+                    </div>
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Username</th>
+                                <th>Email</th>
+                                <th>Name</th>
+                                <th>Role</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="users-table-body"></tbody>
+                    </table>
+                    <div class="pagination">
+                        <button id="users-prev-btn" disabled>Previous</button>
+                        <span id="users-page-info">Page 1</span>
+                        <button id="users-next-btn">Next</button>
+                    </div>
+                </div>
+                
+                <!-- Groups View -->
+                <div id="admin-groups" class="admin-view">
+                    <div class="admin-header">
+                        <h2>Group Management</h2>
+                        <button id="admin-create-group-btn">Create Group</button>
+                    </div>
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Group Name</th>
+                                <th>Members</th>
+                                <th>Created</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="groups-table-body"></tbody>
+                    </table>
+                    <div class="pagination">
+                        <button id="groups-prev-btn" disabled>Previous</button>
+                        <span id="groups-page-info">Page 1</span>
+                        <button id="groups-next-btn">Next</button>
+                    </div>
+                </div>
+                
+                <!-- Online Users View -->
+                <div id="admin-online" class="admin-view">
+                    <div class="admin-header">
+                        <h2>Online Users</h2>
+                        <button id="refresh-online-btn">Refresh</button>
+                    </div>
+                    <div id="online-users-list" class="online-users-grid"></div>
+                </div>
+                
+                <!-- Token Introspection View -->
+                <div id="admin-tokens" class="admin-view">
+                    <div class="admin-header">
+                        <h2>Password Reset Tokens</h2>
+                        <button id="refresh-tokens-btn">Refresh</button>
+                    </div>
+                    <p class="view-info">Active password reset tokens stored in Redis. Tokens auto-expire after 1 hour.</p>
+                    <table class="admin-table">
+                        <thead>
+                            <tr>
+                                <th>Token Hash (truncated)</th>
+                                <th>User ID</th>
+                                <th>TTL</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="tokens-table-body"></tbody>
+                    </table>
+                    <p id="no-tokens-msg" class="empty-state hidden">No active reset tokens.</p>
+                </div>
+            </main>
+        </div>
+
+        <!-- User Detail Modal -->
+        <div id="user-detail-modal" class="modal hidden">
+            <div class="modal-content modal-large">
+                <h2>User Details</h2>
+                <div id="user-detail-content"></div>
+                <div class="modal-actions">
+                    <button class="cancel-btn">Close</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Confirm Delete Modal -->
+        <div id="confirm-delete-modal" class="modal hidden">
+            <div class="modal-content">
+                <h2>Confirm Delete</h2>
+                <p id="confirm-delete-message"></p>
+                <div class="modal-actions">
+                    <button id="confirm-delete-btn" class="danger-btn">Delete</button>
+                    <button class="cancel-btn">Cancel</button>
+                </div>
+            </div>
+        </div>
+
+        <!-- Admin Create Group Modal -->
+        <div id="admin-create-group-modal" class="modal hidden">
+            <div class="modal-content">
+                <h2>Create New Group</h2>
+                <input type="text" id="admin-group-name" placeholder="Group name">
+                <input type="text" id="admin-group-members" placeholder="Usernames (comma separated)">
+                <p id="admin-group-error" class="error hidden"></p>
+                <div class="modal-actions">
+                    <button id="admin-create-group-submit">Create</button>
                     <button class="cancel-btn">Cancel</button>
                 </div>
             </div>

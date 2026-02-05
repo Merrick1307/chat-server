@@ -3,9 +3,11 @@ from uuid import UUID
 
 from fastapi import APIRouter, Depends, HTTPException, status
 from asyncpg import Connection
+from redis.asyncio import Redis
 
 from app.controllers.base import BaseController
 from app.dependencies.database import acquire_db_connection
+from app.dependencies.cache import get_redis_client
 from app.services.auth import AuthService
 from app.utils.logs import ErrorLogger, get_error_logger_dependency
 from app.utils.jwts import verify_and_return_jwt_payload, VerifiedTokenData
@@ -17,6 +19,8 @@ from app.views.auth import (
     TokenResponse,
     LogoutResponse,
     SessionResponse,
+    PasswordResetRequest,
+    PasswordResetConfirm,
 )
 from app.views.responses import APIResponse
 
@@ -292,3 +296,102 @@ async def lookup_user(
     controller = AuthController(db)
     result = await controller.lookup_user(username)
     return APIResponse(data=result)
+
+
+@router.post(
+    "/password/reset-request",
+    summary="Request password reset",
+    description="Request a password reset email. If email exists, a reset link will be sent."
+)
+async def request_password_reset(
+    request: PasswordResetRequest,
+    db: Annotated[Connection, Depends(acquire_db_connection)],
+    redis: Annotated[Redis, Depends(get_redis_client)],
+    logger: Annotated[ErrorLogger, Depends(get_error_logger_dependency)]
+):
+    """
+    Request a password reset.
+    
+    - **email**: The email address associated with the account
+    
+    For security, this endpoint always returns success even if email is not found.
+    If the email exists, a password reset link will be sent.
+    Token is stored in Redis with 1-hour TTL to prevent replay attacks.
+    """
+    from app.utils.email import send_password_reset_email, is_email_configured, generate_reset_token
+    from app.cache import TokenCacheService
+    
+    controller = AuthController(db, logger)
+    user = await controller.auth_service.request_password_reset(request.email)
+    
+    if user and is_email_configured():
+        token = generate_reset_token()
+        token_service = TokenCacheService(redis)
+        await token_service.store_reset_token(token, user["user_id"])
+        
+        await send_password_reset_email(
+            first_name=user["first_name"],
+            last_name=user["last_name"],
+            user_email=user["email"],
+            user_id=user["user_id"],
+            token=token
+        )
+    
+    return APIResponse(
+        data={"success": True},
+        message="If an account exists with this email, a reset link has been sent."
+    )
+
+
+@router.post(
+    "/password/reset",
+    summary="Reset password with token",
+    description="Reset password using the token received via email."
+)
+async def reset_password(
+    request: PasswordResetConfirm,
+    db: Annotated[Connection, Depends(acquire_db_connection)],
+    redis: Annotated[Redis, Depends(get_redis_client)],
+    logger: Annotated[ErrorLogger, Depends(get_error_logger_dependency)]
+):
+    """
+    Reset password using reset token.
+    
+    - **token**: The reset token from the email link
+    - **new_password**: The new password (minimum 8 characters)
+    
+    Token is validated against Redis and invalidated after use to prevent replay attacks.
+    After successful reset, all existing sessions are invalidated.
+    """
+    from app.cache import TokenCacheService
+    
+    if len(request.new_password) < 8:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Password must be at least 8 characters"
+        )
+    
+    token_service = TokenCacheService(redis)
+    user_id = await token_service.validate_reset_token(request.token)
+    
+    if not user_id:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Invalid or expired reset token. Please request a new one."
+        )
+    
+    controller = AuthController(db, logger)
+    success = await controller.auth_service.reset_password(user_id, request.new_password)
+    
+    if not success:
+        raise HTTPException(
+            status_code=status.HTTP_400_BAD_REQUEST,
+            detail="Failed to reset password"
+        )
+    
+    await token_service.invalidate_reset_token(request.token)
+    
+    return APIResponse(
+        data={"success": True},
+        message="Password has been reset successfully. Please login with your new password."
+    )

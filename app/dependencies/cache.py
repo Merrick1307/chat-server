@@ -1,4 +1,6 @@
-﻿from fastapi.requests import Request
+from typing import Union
+
+from fastapi.requests import Request
 from fastapi.websockets import WebSocket
 
 from app.cache import WebSocketCacheService
@@ -16,3 +18,8 @@ async def get_cache_service(websocket: WebSocket) -> WebSocketCacheService:
 async def get_ws_manager(websocket: WebSocket):
     """Get WebSocket manager from app state."""
     return websocket.app.state.ws_manager
+
+
+async def get_ws_manager_http(request: Request):
+    """Get WebSocket manager from app state for HTTP endpoints."""
+    return request.app.state.ws_manager
